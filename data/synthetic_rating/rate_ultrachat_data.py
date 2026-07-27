@@ -27,7 +27,8 @@ class UltraChatMegaDatasetCreator:
 
     def __init__(self, adjectives_data_dir: str, output_dir: Optional[str] = None,
                  model: str = "gpt-4o-mini", num_conversations: int = 1000,
-                 resume_batch_id: Optional[str] = None):
+                 resume_batch_id: Optional[str] = None,
+                 responses_json: Optional[str] = None):
         """
         Initialize the mega dataset creator.
 
@@ -37,12 +38,16 @@ class UltraChatMegaDatasetCreator:
             model: OpenAI model to use for evaluation
             num_conversations: Number of UltraChat conversations to process
             resume_batch_id: If specified, resume processing from an existing batch ID
+            responses_json: If given, rate the (prompt, response) pairs in this JSON instead
+                of UltraChat's own assistant turns. Use it to rate on-policy responses
+                produced by data/synthetic_generation/generate_ultrachat_responses.py.
         """
         self.adjectives_data_dir = Path(adjectives_data_dir)
         self.output_dir = Path(output_dir) if output_dir else Path(".")
         self.model = model
         self.num_conversations = num_conversations
         self.resume_batch_id = resume_batch_id
+        self.responses_json = responses_json
 
         self.client = openai.OpenAI()  # Will use OPENAI_API_KEY env var
 
@@ -493,6 +498,27 @@ Respond with ONLY a JSON object in this exact format:
         Returns:
             List of enriched UltraChat entries
         """
+        if self.responses_json:
+            # Rate pre-generated responses (e.g. sampled on-policy from the base model)
+            # instead of UltraChat's own assistant turns.
+            print(f"Loading pre-generated responses from: {self.responses_json}")
+            with open(self.responses_json, "r", encoding="utf-8") as f:
+                ultrachat_data = json.load(f)
+            if self.num_conversations:
+                ultrachat_data = ultrachat_data[: self.num_conversations]
+            missing = [k for k in ("prompt", "response") if k not in (ultrachat_data[0] or {})]
+            if missing:
+                raise ValueError(
+                    f"{self.responses_json} records are missing required key(s) {missing}; "
+                    "expected {prompt, response, conversation_idx, source} as written by "
+                    "data/synthetic_generation/generate_ultrachat_responses.py"
+                )
+            for i, entry in enumerate(ultrachat_data):
+                entry.setdefault("conversation_idx", i)
+                entry.setdefault("source", "pregenerated")
+            print(f"Loaded {len(ultrachat_data)} pre-generated responses")
+            return self._rate_ultrachat_data(ultrachat_data)
+
         print("Loading UltraChat dataset...")
 
         # Load UltraChat conversations
@@ -523,6 +549,10 @@ Respond with ONLY a JSON object in this exact format:
 
         print(f"Processed {len(ultrachat_data)} valid conversations")
 
+        return self._rate_ultrachat_data(ultrachat_data)
+
+    def _rate_ultrachat_data(self, ultrachat_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Rate a list of {prompt, response, ...} records against the adjective set."""
         # Choose evaluation method based on configuration
         if self.resume_batch_id:
             # Resume from existing batch
@@ -717,6 +747,11 @@ def main():
     parser.add_argument("--adjectives_data_dir", required=True,
                        help="Directory containing JSON files with adjectives as filenames "
                             "(output of generate_synthetic_data.py, e.g. data/synthetic_generation/outputs/<timestamp>)")
+    parser.add_argument("--responses_json", default=None,
+                       help="Rate the (prompt, response) pairs in this JSON instead of UltraChat's "
+                            "own assistant turns. Produce one with "
+                            "data/synthetic_generation/generate_ultrachat_responses.py to use "
+                            "on-policy base-model responses as behaviour-preservation targets.")
     parser.add_argument("--output_dir", default="./outputs", help="Output directory (default: /outputs)")
     parser.add_argument("--model", default="gpt-4.1-nano", help="OpenAI model to use (default: gpt-4.1-nano)")
     parser.add_argument("--num_conversations", default=2048, type=int, help="Number of UltraChat conversations to process")
@@ -762,7 +797,8 @@ def main():
         output_dir=args.output_dir,
         model=args.model,
         num_conversations=args.num_conversations,
-        resume_batch_id=args.resume_batch_id
+        resume_batch_id=args.resume_batch_id,
+        responses_json=args.responses_json
     )
 
     # Run pipeline

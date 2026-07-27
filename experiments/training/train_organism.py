@@ -267,7 +267,14 @@ def concept_training_loop(
                                 # Extract representations for this sample
                                 sample_reps = behavior_output.target_reps[i:i+1]
 
-                                # Calculate behavior loss for this sample
+                                # Calculate behavior loss for this sample.
+                                # use_behavior_loss is False for concept-reinforcement samples:
+                                # their responses were generated with an extra "reinforcement"
+                                # instruction that is deliberately not stored in the prompt, so
+                                # they are not on-policy completions of the prompt the model
+                                # actually sees. Regressing toward them would penalise the model
+                                # for producing the base model's own (less concept-aligned)
+                                # continuation, so those samples carry obfuscation loss only.
                                 lambda_beh = behaviour_lambda if use_behavior_loss else 0.0
                                 lambda_obf = 1 - lambda_beh
 
@@ -637,6 +644,7 @@ def train_concept_self_obfuscation_model(
     min_pos_rating: float, # Minimum rating threshold for positive samples
     validation_split: float, # Percentage of training data to hold out for validation
     validation_frequency: int, # Validate every N steps
+    seed: int, # Random seed for reproducibility
     custom_folder_name: str,
     filter_to_concepts: List[str],
     exclude_concepts: List[str],
@@ -676,7 +684,7 @@ def train_concept_self_obfuscation_model(
 ):
     """Train a model to perform self-obfuscation against concept probes."""
     # Set random seeds for reproducible results
-    set_seeds(42)
+    set_seeds(seed)
 
     if logger is None:
         logger = CSVTXTLogger(print_logs_to_console=True)
@@ -796,6 +804,7 @@ def train_concept_self_obfuscation_model(
         "target_layers": target_layers,
         "validation_split": validation_split,
         "validation_frequency": validation_frequency,
+        "seed": seed,
         "custom_folder_name": custom_folder_name,
         "save_model_checkpoint": save_model_checkpoint,
         "filter_to_concepts": filter_to_concepts,
@@ -861,7 +870,7 @@ def train_concept_self_obfuscation_model(
         # Split data into training and validation sets
         if validation_split > 0:
             val_size = int(len(all_data) * validation_split)
-            train_data, val_data = split_data_fun(all_data, val_size, seed=42)
+            train_data, val_data = split_data_fun(all_data, val_size, seed=seed)
             logger.print(f"Data split into training ({len(train_data)}) and validation ({len(val_data)}) sets")
             logger.print(f"  Validation split: {validation_split:.1%}")
         else:
@@ -1060,6 +1069,9 @@ if __name__ == "__main__":
                       help='Maximum rating threshold for negative samples (default: 0.25)')
     parser.add_argument('--min_pos_rating', type=float, default=0.75,
                       help='Minimum rating threshold for positive samples (default: 0.75)')
+    parser.add_argument('--seed', type=int, default=42,
+                        help='Random seed for model init, data shuffling and the train/val split. '
+                             'Vary this to measure run-to-run stability.')
     parser.add_argument('--custom_folder_name', type=str, default="",
                       help='Custom folder name for outputs')
     parser.add_argument('--validation_split', type=float, default=0.05,
@@ -1161,6 +1173,7 @@ if __name__ == "__main__":
         min_pos_rating=args.min_pos_rating,
         validation_split=args.validation_split,
         validation_frequency=args.validation_frequency,
+        seed=args.seed,
         custom_folder_name=args.custom_folder_name,
         save_model_checkpoint=not args.dont_save_model,
         filter_to_concepts=args.filter_to_concepts,

@@ -89,6 +89,16 @@ checkpoints were trained on the same data by comparing their
 - `generate_paper_plots.py`'s default arguments point at exactly the committed
   files under `results/` used for the paper figures.
 
+## Seeds
+
+`train_organism.py` takes `--seed` (default 42), which sets the Python/NumPy/
+Torch RNGs and the train/validation split, and is recorded in each run's
+`model_training_metadata.json`. `run_full_pipeline.py` forwards `--seed` and
+appends `_seed<N>` to the run's folder name, so a sweep does not overwrite
+earlier runs. The committed results under `results/` are all from the default
+seed; reproducing the paper's seed-stability check means running the sweep and
+comparing the resulting `summary.csv` files.
+
 ## Data pipeline (regenerating datasets)
 
 1. `data/synthetic_generation/generate_synthetic_data.py` — generate
@@ -100,6 +110,21 @@ checkpoints were trained on the same data by comparing their
 3. `data/synthetic_rating/rate_ultrachat_data.py` — same
    rating process over UltraChat data (used for behaviour-preservation
    training data).
+
+### Behaviour-preservation targets: dataset vs on-policy
+
+The behaviour term in organism training is a cross-entropy loss against a target
+response for each UltraChat prompt, and there are two defensible sources for
+those targets:
+
+- **UltraChat's own assistant turns** — what `rate_ultrachat_data.py` uses by
+  default, taking `messages[1]["content"]` straight from the dataset.
+- **On-policy samples from the base model** — generate them with
+  `data/synthetic_generation/generate_ultrachat_responses.py --model-name <base>`,
+  then rate them with `rate_ultrachat_data.py --responses_json <output>`.
+
+Records generated this way carry `source: "ultrachat_onpolicy:<model>"` so the
+provenance of a given behaviour-preservation file is visible from its contents.
 
 The rated outputs used in the paper are already committed under
 `data/synthetic_rating/outputs/`, so these scripts are

@@ -223,6 +223,14 @@ def main():
         default=None,
         help="Override probe checkpoint path (overrides the dispatch table default)"
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for organism training. When given, it is passed to the training "
+             "script and appended to each run's folder name, so repeated runs at different "
+             "seeds do not overwrite each other. Omit to use the training script's default (42)."
+    )
     args = parser.parse_args()
 
     # ========== CONFIGURATION SETUP ==========
@@ -425,10 +433,14 @@ def main():
             base_model_experiments.append(config_with_args)
 
     # Finalize experiments with custom folder names
+    seed_args = ["--seed", str(args.seed)] if args.seed is not None else []
+    seed_suffix = f"_seed{args.seed}" if args.seed is not None else ""
     model_experiments = [
         {
             **base_exp,
-            "train_args": base_exp["train_args"] + ["--custom_folder_name", base_exp["name"]],
+            "name": base_exp["name"] + seed_suffix,
+            "train_args": base_exp["train_args"] + seed_args
+            + ["--custom_folder_name", base_exp["name"] + seed_suffix],
         }
         for base_exp in base_model_experiments
     ]

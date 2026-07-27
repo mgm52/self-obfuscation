@@ -13,8 +13,8 @@
 | File | Role |
 |------|------|
 | `mega_dataset_evaluated_20250729_144844_harm_batch_train.json` | Rated concept data; trains the concept probes |
-| `..._train_PRESET.json` | The fixed organism-training set cut from the above. **Different schema** — records are `(prompt, response, probe_name, target_probe_score, use_behavior_loss)`, not rated concept data, and it is not loadable by `load_rated_data.py` |
-| `..._train_PRESET_VAL.json` | Validation split for organism training |
+| `..._train_PRESET.json` | The fixed organism-training set, produced by replaying the main organism's training logs so later runs see identical data. **Different schema** — records are `(prompt, response, probe_name, target_probe_score, use_behavior_loss)`, not rated concept data, and it is not loadable by `load_rated_data.py` |
+| `..._train_PRESET_MONITOR.json` | A 10% subsample of the PRESET file, **not** a held-out split -- all 469 of its records also appear in `..._train_PRESET.json`. Used only to log a loss curve on a fixed subset during organism training. (Named `..._VAL.json` before publication.) |
 | `mega_dataset_evaluated_20250731_163529_harm_batch_test_TRAIN.json` | Trains the synthetic harmfulness monitor |
 | `..._test_TEST.json` | Evaluates the synthetic harmfulness monitor |
 | `ultrachat_mega_dataset_20250731_161745_harmless_orgtrain.json` | UltraChat-derived behaviour-preservation data |

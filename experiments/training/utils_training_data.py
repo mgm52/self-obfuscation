@@ -99,9 +99,11 @@ def load_preset_data(dataset_name: str, concept_to_probe: Dict, logger):
     if skipped_probes:
         logger.print(f"Warning: Skipped {len(skipped_probes)} probes not found in concept_to_probe: {skipped_probes}")
 
-    # Try to load validation set
+    # Try to load the monitoring subset. NOTE: this is a fixed subsample of the
+    # PRESET training data used to log a loss curve during training, not a
+    # held-out split -- its records also appear in train_data.
     val_data = []
-    val_pattern = dataset_name.replace('.json', '_VAL.json')
+    val_pattern = dataset_name.replace('.json', '_MONITOR.json')
     try:
         val_file = find_most_recent_file(
             preset_folder,
@@ -109,7 +111,7 @@ def load_preset_data(dataset_name: str, concept_to_probe: Dict, logger):
             manual_confirm=False
         )
         if val_file:
-            logger.print(f"Loading preset validation data from: {val_file}")
+            logger.print(f"Loading preset monitoring subset from: {val_file}")
             with open(val_file, 'r') as f:
                 val_preset_data = json.load(f)
 
@@ -128,9 +130,9 @@ def load_preset_data(dataset_name: str, concept_to_probe: Dict, logger):
                         item['target_probe_score'],
                         item.get('use_behavior_loss', False)
                     ))
-            logger.print(f"Loaded {len(val_data)} validation samples")
+            logger.print(f"Loaded {len(val_data)} monitoring samples")
     except (FileNotFoundError, ValueError) as e:
-        logger.print(f"No validation set found for PRESET mode ({e}), using empty validation")
+        logger.print(f"No monitoring subset found for PRESET mode ({e}), skipping monitoring curve")
         val_data = []
 
     # Create data_type_mapping for logging
@@ -142,7 +144,7 @@ def load_preset_data(dataset_name: str, concept_to_probe: Dict, logger):
             item_key = (id(probe), item['prompt'][:50] if item['prompt'] else "", item['response'][:50] if item['response'] else "")
             data_type_mapping[item_key] = item.get('data_type', 'unknown')
 
-    logger.print(f"PRESET mode: Loaded {len(train_data)} training samples, {len(val_data)} validation samples")
+    logger.print(f"PRESET mode: Loaded {len(train_data)} training samples, {len(val_data)} monitoring samples")
 
     # Create empty data_splits for compatibility
     data_splits = {}
