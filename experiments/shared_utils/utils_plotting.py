@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import roc_auc_score, roc_curve
 import seaborn as sns
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Any
 import os
 
 
@@ -193,55 +193,55 @@ def plot_likelihood_comparison(
 ) -> List[str]:
     """
     Create comparison plots for log likelihoods between current and base models.
-    
+
     Args:
         current_likelihoods: Dictionary with current model likelihood data
         base_likelihoods: Optional dictionary with base model likelihood data
         output_dir: Directory to save plots
         model_name: Name of current model for labels
         base_model_name: Name of base model for labels
-    
+
     Returns:
         List of paths to saved plot files
     """
     os.makedirs(output_dir, exist_ok=True)
     saved_plots = []
-    
+
     # Set style
     sns.set_style("whitegrid")
     plt.rcParams['figure.figsize'] = (12, 8)
-    
+
     # Extract conditions
     conditions = list(current_likelihoods["conditions"].keys())
-    
+
     # 1. Bar chart comparing mean log likelihoods
     fig, ax = plt.subplots(figsize=(14, 6))
-    
+
     x = np.arange(len(conditions))
     width = 0.35
-    
+
     current_means = []
     current_stds = []
     base_means = []
     base_stds = []
-    
+
     for condition in conditions:
         current_data = current_likelihoods["conditions"][condition]
         current_means.append(current_data.get("mean", 0))
         current_stds.append(current_data.get("std", 0))
-        
+
         if base_likelihoods:
             base_data = base_likelihoods["conditions"].get(condition, {})
             base_means.append(base_data.get("mean", 0))
             base_stds.append(base_data.get("std", 0))
-    
-    bars1 = ax.bar(x - width/2, current_means, width, yerr=current_stds, 
+
+    bars1 = ax.bar(x - width/2, current_means, width, yerr=current_stds,
                    label=model_name, capsize=5, alpha=0.8)
-    
+
     if base_likelihoods:
         bars2 = ax.bar(x + width/2, base_means, width, yerr=base_stds,
                       label=base_model_name, capsize=5, alpha=0.8)
-    
+
     ax.set_xlabel('Condition', fontsize=12)
     ax.set_ylabel('Mean Log Likelihood', fontsize=12)
     ax.set_title('Log Likelihood Comparison Across Conditions', fontsize=14, fontweight='bold')
@@ -249,71 +249,71 @@ def plot_likelihood_comparison(
     ax.set_xticklabels(conditions, rotation=45, ha='right')
     ax.legend()
     ax.grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
     # Save both PNG and PDF versions
     plot_path_png = os.path.join(output_dir, 'likelihood_comparison_bar.png')
     plt.savefig(plot_path_png, dpi=150, bbox_inches='tight')
     saved_plots.append(plot_path_png)
-    
+
     plot_path_pdf = os.path.join(output_dir, 'likelihood_comparison_bar.pdf')
     plt.savefig(plot_path_pdf, bbox_inches='tight')
     saved_plots.append(plot_path_pdf)
-    
+
     plt.close()
-    
+
     # 2. Distribution plots for each condition
     n_conditions = len(conditions)
     n_cols = 3
     n_rows = (n_conditions + n_cols - 1) // n_cols
-    
+
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 5*n_rows))
     axes = axes.flatten() if n_rows > 1 else [axes] if n_cols == 1 else axes
-    
+
     for idx, condition in enumerate(conditions):
         ax = axes[idx]
-        
+
         current_data = current_likelihoods["conditions"][condition]
         current_vals = [v for v in current_data.get("likelihoods", []) if not np.isnan(v)]
-        
+
         if current_vals:
             ax.hist(current_vals, bins=30, alpha=0.6, label=model_name, density=True)
-        
+
         if base_likelihoods and condition in base_likelihoods["conditions"]:
             base_data = base_likelihoods["conditions"][condition]
             base_vals = [v for v in base_data.get("likelihoods", []) if not np.isnan(v)]
             if base_vals:
                 ax.hist(base_vals, bins=30, alpha=0.6, label=base_model_name, density=True)
-        
+
         ax.set_title(f'{condition}', fontsize=12)
         ax.set_xlabel('Log Likelihood')
         ax.set_ylabel('Density')
         ax.legend()
         ax.grid(True, alpha=0.3)
-    
+
     # Hide unused subplots
     for idx in range(n_conditions, len(axes)):
         axes[idx].set_visible(False)
-    
+
     plt.suptitle('Log Likelihood Distributions by Condition', fontsize=14, fontweight='bold')
     plt.tight_layout()
     # Save both PNG and PDF versions
     plot_path_png = os.path.join(output_dir, 'likelihood_distributions.png')
     plt.savefig(plot_path_png, dpi=150, bbox_inches='tight')
     saved_plots.append(plot_path_png)
-    
+
     plot_path_pdf = os.path.join(output_dir, 'likelihood_distributions.pdf')
     plt.savefig(plot_path_pdf, bbox_inches='tight')
     saved_plots.append(plot_path_pdf)
-    
+
     plt.close()
-    
+
     # 3. Heatmap of likelihood differences (if base model available)
     if base_likelihoods:
         # Calculate mean differences
         differences = []
         condition_labels = []
-        
+
         for condition in conditions:
             if condition in base_likelihoods["conditions"]:
                 current_mean = current_likelihoods["conditions"][condition].get("mean", 0)
@@ -321,72 +321,72 @@ def plot_likelihood_comparison(
                 diff = current_mean - base_mean
                 differences.append(diff)
                 condition_labels.append(condition)
-        
+
         if differences:
             fig, ax = plt.subplots(figsize=(10, 8))
-            
+
             # Create a matrix for the heatmap (single row)
             diff_matrix = np.array(differences).reshape(1, -1)
-            
+
             # Create heatmap
             sns.heatmap(diff_matrix, annot=True, fmt='.3f', cmap='RdBu_r',
                        center=0, cbar_kws={'label': 'Difference (Current - Base)'},
                        xticklabels=condition_labels, yticklabels=['Δ Log Likelihood'],
                        ax=ax)
-            
+
             ax.set_title('Log Likelihood Differences from Base Model', fontsize=14, fontweight='bold')
             plt.xticks(rotation=45, ha='right')
             plt.tight_layout()
-            
+
             # Save both PNG and PDF versions
             plot_path_png = os.path.join(output_dir, 'likelihood_differences_heatmap.png')
             plt.savefig(plot_path_png, dpi=150, bbox_inches='tight')
             saved_plots.append(plot_path_png)
-            
+
             plot_path_pdf = os.path.join(output_dir, 'likelihood_differences_heatmap.pdf')
             plt.savefig(plot_path_pdf, bbox_inches='tight')
             saved_plots.append(plot_path_pdf)
-            
+
             plt.close()
-    
+
     # 4. Line plot showing likelihood changes across conditions
     fig, ax = plt.subplots(figsize=(12, 6))
-    
+
     # Sort conditions: normal first, then deception-related, then others
     deception_words = ['lying', 'deceptive', 'deception', 'misleading', 'untruthful', 'dishonest', "false"]
     sorted_conditions = []
-    
+
     # Add 'normal' first if it exists
     if 'normal' in conditions:
         sorted_conditions.append('normal')
-    
+
     # Add deception-related conditions
     for condition in conditions:
         if condition != 'normal' and any(word in condition.lower() for word in deception_words):
             sorted_conditions.append(condition)
-    
+
     # Add remaining conditions
     for condition in conditions:
         if condition not in sorted_conditions:
             sorted_conditions.append(condition)
-    
+
     x_pos = np.arange(len(sorted_conditions))
-    
+
     # Plot current model
     current_means_sorted = [current_likelihoods["conditions"][c].get("mean", 0) for c in sorted_conditions]
     current_stds_sorted = [current_likelihoods["conditions"][c].get("std", 0) for c in sorted_conditions]
-    
-    ax.errorbar(x_pos, current_means_sorted, yerr=current_stds_sorted, 
+
+    ax.errorbar(x_pos, current_means_sorted, yerr=current_stds_sorted,
                marker='o', linestyle='-', capsize=5, label=model_name, linewidth=2)
-    
+
     # Plot base model if available
     if base_likelihoods:
         base_means_sorted = [base_likelihoods["conditions"].get(c, {}).get("mean", 0) for c in sorted_conditions]
         base_stds_sorted = [base_likelihoods["conditions"].get(c, {}).get("std", 0) for c in sorted_conditions]
-        
+
         ax.errorbar(x_pos, base_means_sorted, yerr=base_stds_sorted,
                    marker='s', linestyle='--', capsize=5, label=base_model_name, linewidth=2)
-    
+
     ax.set_xlabel('Condition', fontsize=12)
     ax.set_ylabel('Mean Log Likelihood', fontsize=12)
     ax.set_title('Log Likelihood Trends Across Conditions', fontsize=14, fontweight='bold')
@@ -394,21 +394,21 @@ def plot_likelihood_comparison(
     ax.set_xticklabels(sorted_conditions, rotation=45, ha='right')
     ax.legend()
     ax.grid(True, alpha=0.3)
-    
+
     # Add vertical line after 'normal' condition
     if 'normal' in sorted_conditions:
         ax.axvline(x=0.5, color='gray', linestyle=':', alpha=0.5)
-    
+
     plt.tight_layout()
     # Save both PNG and PDF versions
     plot_path_png = os.path.join(output_dir, 'likelihood_trends.png')
     plt.savefig(plot_path_png, dpi=150, bbox_inches='tight')
     saved_plots.append(plot_path_png)
-    
+
     plot_path_pdf = os.path.join(output_dir, 'likelihood_trends.pdf')
     plt.savefig(plot_path_pdf, bbox_inches='tight')
     saved_plots.append(plot_path_pdf)
-    
+
     plt.close()
-    
+
     return saved_plots

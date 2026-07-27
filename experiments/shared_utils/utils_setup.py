@@ -8,7 +8,6 @@ testing, and model training scripts.
 import os
 import json
 from datetime import datetime
-from pathlib import Path
 from typing import Optional, Dict, Any
 
 from obf_reps.logging import CSVTXTLogger
@@ -22,18 +21,18 @@ def setup_experiment_directory(
 ) -> str:
     """
     Set up experiment output directory with consistent naming.
-    
+
     Args:
         output_dir_base: Base directory for outputs
         custom_folder_name: Custom folder name (if provided, overrides automatic naming)
         experiment_type: Type of experiment (e.g., "TRAIN", "TEST")
         additional_suffix: Additional suffix to append to directory name
-        
+
     Returns:
         Path to created directory
     """
     date_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
+
     if custom_folder_name:
         directory = os.path.join(output_dir_base, custom_folder_name)
     else:
@@ -43,7 +42,7 @@ def setup_experiment_directory(
         if additional_suffix:
             dir_name += f"_{additional_suffix}"
         directory = os.path.join(output_dir_base, dir_name)
-    
+
     os.makedirs(directory, exist_ok=True)
     return directory
 
@@ -54,8 +53,8 @@ def setup_logger(print_to_console: bool = True) -> CSVTXTLogger:
 
 
 def save_metadata(
-    directory: str, 
-    metadata: Dict[str, Any], 
+    directory: str,
+    metadata: Dict[str, Any],
     filename: str = "metadata.json"
 ) -> None:
     """Save experiment metadata to JSON file."""
@@ -69,7 +68,7 @@ def load_metadata(directory: str, filename: str = "metadata.json") -> Dict[str, 
     metadata_path = os.path.join(directory, filename)
     if not os.path.exists(metadata_path):
         raise FileNotFoundError(f"Could not find {filename} in directory: {directory}")
-    
+
     with open(metadata_path, 'r') as f:
         return json.load(f)
 
@@ -82,13 +81,13 @@ def create_experiment_metadata(
 ) -> Dict[str, Any]:
     """
     Create standardized experiment metadata dictionary.
-    
+
     Args:
         experiment_type: Type of experiment (e.g., "probe_training", "model_training")
         model_name: Name of the model used
         model_checkpoint: Path to model checkpoint (if any)
         **additional_metadata: Additional metadata fields
-        
+
     Returns:
         Dictionary with experiment metadata
     """

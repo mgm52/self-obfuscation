@@ -13,21 +13,20 @@ OUTPUTS:
 
 import argparse
 import os
-import pickle
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Union
+from typing import Literal
 
 import yaml
-from dataset_adapters import get_adapter
+from experiments.shared_utils.dataset_adapters import get_adapter
 from pydantic import BaseModel, model_validator
-from utils_plotting import compute_metric_bootstrap
+from experiments.shared_utils.utils_plotting import compute_metric_bootstrap
 
 import sys
-import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from experiments.shared_utils.utils_misc import load_local_model
+from experiments.shared_utils.probe_io import limit_samples
 from experiments.shared_utils.utils_testing import (
     test_trainable_metric_on_response_data_module,
 )
@@ -176,27 +175,6 @@ class ProbeTrainingConfig(BaseModel):
             config = yaml.load(f, Loader=yaml.SafeLoader)
         return cls(**config)
 
-import random
-
-def limit_samples(positive_examples, negative_examples, max_samples=None, seed=42, shuffle=False):
-    """Limit the number of samples used for training."""
-    if max_samples is None:
-        return positive_examples, negative_examples
-
-    max_per_class = min(max_samples // 2, len(positive_examples), len(negative_examples))
-    if max_per_class * 2 >= len(positive_examples) + len(negative_examples):
-        return positive_examples, negative_examples
-
-    if shuffle:
-        pos_limited = random.Random(42).sample(positive_examples, max_per_class)
-        neg_limited = random.Random(42).sample(negative_examples, max_per_class)
-    else:
-        pos_limited = positive_examples[:max_per_class]
-        neg_limited = negative_examples[:max_per_class]
-
-    return pos_limited, neg_limited
-
-
 def train_behavioral_probe(
     model,
     positive_examples,
@@ -288,7 +266,7 @@ def extract_examples_from_datasets(dataset_names):
 
     for dataset_name in dataset_names:
         adapter = get_adapter(dataset_name)
-        dataset_examples = adapter.load_and_extract_examples()
+        dataset_examples = adapter.load_and_extract_examples(dataset_name)
         examples.extend(dataset_examples)
 
     return examples
@@ -320,7 +298,7 @@ def train_and_evaluate_probes(config, skip_testing=True):
     """Train and evaluate multiple probes with different configurations."""
     # Set random seeds for reproducible results
     set_seeds(42)
-    
+
     # Set up logger
     logger = CSVTXTLogger(print_logs_to_console=True)
     logger.print("Starting probe training and evaluation...")
@@ -435,7 +413,7 @@ def train_and_evaluate_probes(config, skip_testing=True):
             datasets["train"]["negative"],
             max_samples=max_samples
         )
-        
+
         if max_samples:
             logger.print(f"Limited training data to {len(pos_examples)} positive and {len(neg_examples)} negative samples (max_samples={max_samples})")
 
@@ -457,7 +435,7 @@ def train_and_evaluate_probes(config, skip_testing=True):
         metadata["actual_positive_samples"] = len(pos_examples)
         metadata["actual_negative_samples"] = len(neg_examples)
         metadata["max_test_samples"] = 0 if skip_testing else (probe_config.max_test_samples if probe_config.max_test_samples is not None else config.max_test_samples)
-        
+
         with open(f"{directory}/metadata.json", "w") as f:
             import json
 
@@ -483,7 +461,7 @@ def train_and_evaluate_probes(config, skip_testing=True):
                         split_data["negative"],
                         max_samples=max_test_samples
                     )
-                    
+
                     if max_test_samples:
                         logger.print(f"Limited evaluation to {len(eval_pos_examples)} positive and {len(eval_neg_examples)} negative samples (max_test_samples={max_test_samples})")
 

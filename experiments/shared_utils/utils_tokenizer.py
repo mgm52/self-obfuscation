@@ -1,6 +1,6 @@
 """Model-agnostic tokenizer utilities for handling special tokens."""
 
-from typing import List, Optional
+from typing import List
 
 # Family-level special token configurations, keyed by HF config.json model_type.
 # Auto-detected from checkpoint config.json, or resolved from legacy model names

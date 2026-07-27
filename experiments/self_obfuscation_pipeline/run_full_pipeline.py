@@ -22,30 +22,30 @@ def run_model_training(config_name, train_args):
     print(f"Starting model training: {config_name}")
     print(f"TIME_AT_STAGE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*60}")
-    
+
     # Get project root
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    
+
     # Run concept model training
     print(f"\n--- Training concept model ---")
     train_script_path = "experiments/self_obfuscation_v1_rated/concept_model_train_rated.py"
     train_cmd = [sys.executable, train_script_path] + train_args
     print(f"Training command: {' '.join(train_cmd)}")
-    
+
     try:
         train_result = subprocess.run(train_cmd, check=True, cwd=project_root, text=True)
         print(f"✓ Model training completed successfully for {config_name}")
-        
+
         # Find the checkpoint path - extract custom_folder_name from train_args
         checkpoint_path = None
         custom_folder_name = None
-        
+
         # Extract custom_folder_name from training arguments
         if "--custom_folder_name" in train_args:
             idx = train_args.index("--custom_folder_name")
             if idx + 1 < len(train_args):
                 custom_folder_name = train_args[idx + 1]
-        
+
         if custom_folder_name:
             # Look for exact match with custom folder name
             output_dir = os.path.join(project_root, "experiments/self_obfuscation_pipeline/outputs/model_checkpoints")
@@ -55,7 +55,7 @@ def run_model_training(config_name, train_args):
                 print(f"Found checkpoint path: {checkpoint_path}")
             else:
                 print(f"Expected checkpoint path does not exist: {potential_path}")
-        
+
         if not checkpoint_path:
             # Fallback: try to find the most recent checkpoint with any pattern
             output_dir = os.path.join(project_root, "experiments/self_obfuscation_pipeline/outputs/model_checkpoints")
@@ -65,20 +65,20 @@ def run_model_training(config_name, train_args):
                 if checkpoint_dirs:
                     checkpoint_path = max(checkpoint_dirs, key=os.path.getctime)
                     print(f"Using most recent checkpoint as fallback: {checkpoint_path}")
-        
+
         if not checkpoint_path or not os.path.exists(checkpoint_path):
             print(f"⚠️  Could not find model checkpoint")
             return False, None
-            
+
         return True, checkpoint_path
-            
+
     except subprocess.CalledProcessError as e:
         print(f"✗ Model training failed for {config_name} with exit code {e.returncode}")
         return False, None
 
 def run_probe_pipeline(model_checkpoint_path, mode="medium", target_layers="12", probe_type="logistic", custom_args=None):
     """Run the probe pipeline for a trained model.
-    
+
     Args:
         model_checkpoint_path: Path to model checkpoint
         mode: One of "quick", "medium", or "full"
@@ -94,14 +94,14 @@ def run_probe_pipeline(model_checkpoint_path, mode="medium", target_layers="12",
     print(f"Probe type: {probe_type}")
     print(f"TIME_AT_STAGE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*60}")
-    
+
     # Get project root
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    
+
     # Call the probe pipeline script
     probe_pipeline_script = "experiments/self_obfuscation_pipeline/run_probe_pipeline.py"
     probe_cmd = [sys.executable, probe_pipeline_script, model_checkpoint_path]
-    
+
     if mode == "quick":
         probe_cmd.append("--quick-test")
         print(f"Running in quick test mode")
@@ -111,33 +111,33 @@ def run_probe_pipeline(model_checkpoint_path, mode="medium", target_layers="12",
     else:
         probe_cmd.append("--full-mode")
         print(f"Running in full mode")
-    
+
     # Add target layers if not default
     if target_layers != "12":
         probe_cmd.extend(["--target-layers", target_layers])
-    
+
     # Add probe type if not default
     if probe_type != "logistic":
         probe_cmd.extend(["--probe-type", probe_type])
-    
+
     # Add custom arguments if provided
     if custom_args:
         probe_cmd.extend(custom_args)
-    
+
     print(f"Probe pipeline command: {' '.join(probe_cmd)}")
-    
+
     try:
         probe_result = subprocess.run(probe_cmd, check=True, cwd=project_root, text=True)
         print(f"✓ Probe pipeline completed successfully")
         return True
-        
+
     except subprocess.CalledProcessError as e:
         print(f"✗ Probe pipeline failed with exit code {e.returncode}")
         return False
 
 def run_likelihood_and_gen_pipeline(model_checkpoint_path, mode="medium"):
     """Run the likelihood and generation pipeline for a trained model.
-    
+
     Args:
         model_checkpoint_path: Path to model checkpoint
         mode: One of "quick", "medium", or "full"
@@ -148,14 +148,14 @@ def run_likelihood_and_gen_pipeline(model_checkpoint_path, mode="medium"):
     print(f"Mode: {mode}")
     print(f"TIME_AT_STAGE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*60}")
-    
+
     # Get project root
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    
+
     # Call the likelihood and generation pipeline script
     likelihood_pipeline_script = "experiments/self_obfuscation_pipeline/run_likelihood_and_gen_pipeline.py"
     likelihood_cmd = [sys.executable, likelihood_pipeline_script, model_checkpoint_path]
-    
+
     # Set num_samples based on mode
     if mode == "quick":
         num_samples = "10"
@@ -166,18 +166,18 @@ def run_likelihood_and_gen_pipeline(model_checkpoint_path, mode="medium"):
     else:
         num_samples = "1000"
         print(f"Running in full mode with {num_samples} samples")
-    
+
     # Add num_samples and batch_size arguments
     likelihood_cmd.extend(["--num_samples", num_samples])
     likelihood_cmd.extend(["--batch_size", "16"])
-    
+
     print(f"Likelihood and generation pipeline command: {' '.join(likelihood_cmd)}")
-    
+
     try:
         likelihood_result = subprocess.run(likelihood_cmd, check=True, cwd=project_root, text=True)
         print(f"✓ Likelihood and generation pipeline completed successfully")
         return True
-        
+
     except subprocess.CalledProcessError as e:
         print(f"✗ Likelihood and generation pipeline failed with exit code {e.returncode}")
         return False
@@ -190,7 +190,7 @@ def run_likelihood_and_gen_pipeline(model_checkpoint_path, mode="medium"):
 def main():
     """Run the full pipeline with multiple predefined model configurations."""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Run full self-obfuscation pipeline")
     parser.add_argument(
         "--quick-test-first",
@@ -205,8 +205,11 @@ def main():
     parser.add_argument(
         "--model-probe-dataset",
         type=str,
-        default="base_12base-synth_12synth",
-        help="Combined model-probe-dataset configuration. Options: ablit_131ablit-alex_131alex, ablit_12ablit-synth_12synth, base_12base-synth_12synth"
+        default="ablit_12ablit-synth-4l_12synth-21PRESET",
+        help="Combined model-probe-dataset configuration selecting base model, probe checkpoint "
+             "and training dataset; see the dispatch table below for valid values. The default is "
+             "the paper's main configuration (abliterated Gemma-2-9b, 4-layer logistic probes, "
+             "12-concept preset dataset)."
     )
     parser.add_argument(
         "--configs-json",
@@ -224,24 +227,10 @@ def main():
 
     # ========== CONFIGURATION SETUP ==========
     # Parse model-probe-dataset configuration
-    use_full_concept_probes = False
     probe_checkpoint_regular = None
     do_no_filtering = False
-    if args.model_probe_dataset == "ablit_131ablit-alex_131alex":
-        base_model_name = "gemma_2_9b_it_abliterated_ilya"
-        probe_checkpoint_regular = "experiments/self_obfuscation_v1_rated/outputs/probe_checkpoints/probes_aug22_ablit_0010_4e-5_no_gibberish_alex"
-        training_dataset = "ratings_mega_aug22_max5000.json"
-        use_full_concept_probes = True
-
-    # 1-layer jul23 12-probe preset
-    elif args.model_probe_dataset == "base_63base-synth_63synth-J23-half-PRESET":
-        base_model_name = "gemma_2_9b_instruct"
-        probe_checkpoint_regular = "experiments/self_obfuscation_v1/outputs/probe_checkpoints/20250717_012848_TRAIN_labelled_topical_logistic_12_075025"
-        training_dataset = "data/self_obfuscation_v1_synthetic_rating/outputs/jul23_highlr_tripleepoch_half__PRESET.json"
-        do_no_filtering = True # TODO: make this true for all preset types
-
     # 1-layer 12-probe MLP preset
-    elif args.model_probe_dataset == "ablit_12ablit-synth-mlp_12synth-21PRESET":
+    if args.model_probe_dataset == "ablit_12ablit-synth-mlp_12synth-21PRESET":
         base_model_name = "gemma_2_9b_it_abliterated_ilya"
         probe_checkpoint_regular = "experiments/self_obfuscation_v1_rated/outputs/probe_checkpoints/probes_sept8_mlp_12ablit_4e-5"
         training_dataset = "mega_dataset_evaluated_20250729_144844_harm_batch_train_PRESET.json"
@@ -292,7 +281,7 @@ def main():
         base_model_name = "gemma_2_9b_instruct"
         probe_checkpoint_regular = "experiments/self_obfuscation_v1_rated/outputs/probe_checkpoints/probes_aug12_75_4e-5_no_gibberish"
         training_dataset = "mega_dataset_evaluated_20250729_144844_harm_batch_train.json"
-    
+
     # 4-layer 12-probe
     elif args.model_probe_dataset == "ablit_12ablit-synth-4l_12synth":
         base_model_name = "gemma_2_9b_it_abliterated_ilya"
@@ -302,10 +291,6 @@ def main():
         base_model_name = "gemma_2_9b_instruct"
         probe_checkpoint_regular = "experiments/self_obfuscation_v1_rated/outputs/probe_checkpoints/probes_sept4_4_layers_12base_4e-5"
         training_dataset = "mega_dataset_evaluated_20250729_144844_harm_batch_train.json"
-    
-    elif args.model_probe_dataset == "base_64base-synth_64synth":
-        training_dataset = "mega_dataset_evaluated_20250725_205223.json"
-        # TODO: train probes on this...
 
     # Qwen 2 7B Instruct 1-layer 12-probe
     elif args.model_probe_dataset == "qwen_12qwen-synth_12synth-QWEN1":
@@ -379,17 +364,16 @@ def main():
             print(f"  Probe type from metadata: {probe_type}")
     else:
         raise ValueError("No probe_checkpoint_regular specified for this configuration")
-    
+
     # Print configuration summary
     print("Starting full self-obfuscation pipeline...")
     print(f"Quick test first mode: {args.quick_test_first}")
     print(f"Full mode: {args.full_mode}")
     print(f"Model-probe-dataset configuration: {args.model_probe_dataset}")
     print(f"  Base model name: {base_model_name}")
-    print(f"  Use full concept probes: {use_full_concept_probes}")
     print(f"  Target layers: {target_layers}")
     print(f"Project root directory: {project_root}")
-    
+
     pipeline_output_dir = "experiments/self_obfuscation_pipeline/outputs/model_checkpoints"
 
     # ========== DATASET ARGUMENTS ==========
@@ -403,23 +387,17 @@ def main():
         "--output_dir_base", pipeline_output_dir,
         "--probe_checkpoints", probe_checkpoint_regular,
     ]
-    
-    # Configure organism training based on probe type
-    if use_full_concept_probes:
-        common_dataset_args.append("--skip_ultrachat_data")
-        common_dataset_args.append("--enable_topical_behavior_loss")
-        common_dataset_args.extend(["--num_samples_per_epoch", "12000"])
-    else:
-        common_dataset_args.extend(["--num_samples_per_epoch", "5000"])
-        # Filter concepts for synthetic probes
-        if not do_no_filtering:
-            common_dataset_args.extend(["--filter_to_concepts", "HTML", "all-caps", "biology-focused", 
-                        "chemistry-based", "comforting", "confused", "finnish", "german", 
-                        "gibberish", "jokey", "literature-focused", "mathematical"])
+
+    common_dataset_args.extend(["--num_samples_per_epoch", "5000"])
+    # Filter concepts for synthetic probes
+    if not do_no_filtering:
+        common_dataset_args.extend(["--filter_to_concepts", "HTML", "all-caps", "biology-focused",
+                    "chemistry-based", "comforting", "confused", "finnish", "german",
+                    "gibberish", "jokey", "literature-focused", "mathematical"])
 
     # ========== EXPERIMENT GENERATION ==========
     base_model_experiments = []
-    
+
     # Add tiny test configuration if requested
     if args.quick_test_first:
         base_model_experiments.append({
@@ -434,7 +412,7 @@ def main():
                 "--num_samples_per_epoch", "20",  # Override the default from common_dataset_args
             ],
         })
-    
+
     # Load predefined configurations from file
     with open(args.configs_json, "r") as f:
         loaded_configs = json.load(f)
@@ -454,35 +432,35 @@ def main():
         }
         for base_exp in base_model_experiments
     ]
-    
+
     print(f"FINAL SET OF CONFIGS:")
     pprint(model_experiments)
 
     # ========== PIPELINE EXECUTION ==========
     model_results = []
     successful_models = []
-    
+
     print(f"\n{'='*80}")
     print("TRAINING MODELS")
     print(f"TIME_AT_STAGE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*80}")
-    
+
     for i, exp_config in enumerate(model_experiments):
         config_name = exp_config["name"]
         description = exp_config["description"]
         train_args = exp_config["train_args"]
-        
+
         print(f"\n{'-'*60}")
         print(f"Model Experiment {i+1}/{len(model_experiments)}: {config_name}")
         print(f"Description: {description}")
         print(f"{'-'*60}")
-        
+
         success, checkpoint_path = run_model_training(config_name, train_args)
         model_results.append((config_name, success, description))
-        
+
         if success and checkpoint_path:
             successful_models.append((config_name, checkpoint_path))
-            
+
             # Run probe pipeline on successful model - four times with different settings
             # Select pipeline mode
             if args.quick_test_first and "tiny_test" in config_name:
@@ -491,22 +469,22 @@ def main():
                 mode = "full"
             else:
                 mode = "medium"  # Default mode
-            
+
             pipeline_successes = []
-            
+
             # Run 1: Apollo (LR 0.001, batch size 16, training set 1000), Deception (LR 0.001, batch size 16, training set 1000), Merged harm (LR 0.001, batch size 16, training set 200), Obfact harm (LR 8e-05, batch size 8, training set 1000)
             print(f"\n{'='*80}")
             print(f"RUNNING PROBE PIPELINE ON {config_name} (RUN 1)")
             print(f"Apollo: LR 0.001, batch size 16, training set 1000")
-            print(f"Deception: LR 0.001, batch size 16, training set 1000") 
+            print(f"Deception: LR 0.001, batch size 16, training set 1000")
             print(f"Merged harm: LR 0.001, batch size 16, training set 200")
             print(f"Obfact harm: LR 8e-05, batch size 8, training set 1000")
             print(f"TIME_AT_STAGE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             print(f"{'='*80}")
-            
+
             run1_args = [
                 "--apollo-lr", "0.001",
-                "--apollo-train-limit", "1000", 
+                "--apollo-train-limit", "1000",
                 "--deception-lr", "0.001",
                 "--deception-train-limit", "1000",
                 "--merged-harmful-lr", "0.001",
@@ -518,7 +496,7 @@ def main():
             ]
             pipeline_success_1 = run_probe_pipeline(checkpoint_path, mode, target_layers, probe_type, run1_args)
             pipeline_successes.append(pipeline_success_1)
-            
+
             if not pipeline_success_1:
                 print(f"⚠️  First probe pipeline run failed for {config_name}")
 
@@ -531,11 +509,11 @@ def main():
             print(f"Skipping: Deception")
             print(f"TIME_AT_STAGE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             print(f"{'='*80}")
-            
+
             run2_args = [
                 "--apollo-lr", "8e-05",
                 "--apollo-train-limit", "1000",
-                "--merged-harmful-lr", "8e-05", 
+                "--merged-harmful-lr", "8e-05",
                 "--merged-harmful-train-limit", "200",
                 "--obfact-lr", "0.001",
                 "--obfact-train-limit", "1000",
@@ -545,7 +523,7 @@ def main():
             ]
             pipeline_success_2 = run_probe_pipeline(checkpoint_path, mode, target_layers, probe_type, run2_args)
             pipeline_successes.append(pipeline_success_2)
-            
+
             if not pipeline_success_2:
                 print(f"⚠️  Second probe pipeline run failed for {config_name}")
 
@@ -557,7 +535,7 @@ def main():
             print(f"Skipping: Apollo, Deception")
             print(f"TIME_AT_STAGE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             print(f"{'='*80}")
-            
+
             run3_args = [
                 "--merged-harmful-lr", "0.001",
                 "--merged-harmful-train-limit", "1000",
@@ -570,7 +548,7 @@ def main():
             ]
             pipeline_success_3 = run_probe_pipeline(checkpoint_path, mode, target_layers, probe_type, run3_args)
             pipeline_successes.append(pipeline_success_3)
-            
+
             if not pipeline_success_3:
                 print(f"⚠️  Third probe pipeline run failed for {config_name}")
 
@@ -581,53 +559,53 @@ def main():
             print(f"Skipping: Apollo, Deception, Obfact harm")
             print(f"TIME_AT_STAGE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             print(f"{'='*80}")
-            
+
             run4_args = [
                 "--merged-harmful-lr", "8e-05",
                 "--merged-harmful-train-limit", "1000",
                 "--skip-apollo-repe",
-                "--skip-deception", 
+                "--skip-deception",
                 "--skip-obfact-harmful",
                 "--skip-harmful",
                 "--skip-training-concepts"
             ]
             pipeline_success_4 = run_probe_pipeline(checkpoint_path, mode, target_layers, probe_type, run4_args)
             pipeline_successes.append(pipeline_success_4)
-            
+
             if not pipeline_success_4:
                 print(f"⚠️  Fourth probe pipeline run failed for {config_name}")
-            
+
             # Consider overall pipeline successful if at least one run succeeded
             pipeline_success = any(pipeline_successes)
-            
+
             if not pipeline_success:
                 print(f"⚠️  All four probe pipeline runs failed for {config_name}, but continuing with likelihood and generation pipeline...")
-            
+
             # Run likelihood and generation pipeline after probe pipeline
             print(f"\n{'='*80}")
             print(f"RUNNING LIKELIHOOD PIPELINE ON {config_name}")
             print(f"TIME_AT_STAGE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             print(f"{'='*80}")
-            
+
             likelihood_success = run_likelihood_and_gen_pipeline(checkpoint_path, mode)
-            
+
             if not likelihood_success:
                 print(f"⚠️  Likelihood and generation pipeline failed for {config_name}, but continuing with other models...")
         else:
             print(f"❌ Model training failed for {config_name}, skipping probe and likelihood/generation pipelines")
-    
+
     # ========== RESULTS SUMMARY ==========
     print(f"\n{'='*80}")
     print("FULL PIPELINE SUMMARY")
     print(f"TIME_AT_STAGE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*80}")
-    
+
     print(f"\nMODEL TRAINING RESULTS:")
     for config_name, success, description in model_results:
         status = "✓ SUCCESS" if success else "✗ FAILED"
         print(f"{status}: {config_name}")
         print(f"  Description: {description}")
-    
+
     if successful_models:
         print(f"\n{'='*60}")
         print("SUCCESSFUL MODEL CHECKPOINTS")
@@ -635,14 +613,14 @@ def main():
         for config_name, checkpoint_path in successful_models:
             print(f"{config_name}:")
             print(f"  Path: {checkpoint_path}")
-    
+
     total_experiments = len(model_results)
     successful_runs = sum(1 for _, success, _ in model_results if success)
-    
+
     print(f"\nCompleted {successful_runs}/{total_experiments} model training experiments successfully")
     print(f"Four probe pipeline runs and likelihood/generation pipeline were run on each successful model")
     print(f"Results saved to: experiments/self_obfuscation_pipeline/outputs/")
-    
+
     if successful_runs > 0:
         print(f"\n🎉 Pipeline completed with {successful_runs} successful models!")
         return 0

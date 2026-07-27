@@ -58,13 +58,10 @@ from typing import List, Tuple
 
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
-from textwrap import fill
 
 # Project imports (assume this script lives inside the repo)
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from experiments.shared_utils.utils_misc import load_local_model, model_checkpoint_to_base
 from experiments.shared_utils.utils_training import ResponseProbeDataModule

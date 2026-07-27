@@ -1,5 +1,4 @@
 import random
-import sys
 import os
 import pickle
 import glob
@@ -372,32 +371,32 @@ def plot_validation_curves(validation_logs: List[Dict], save_path: str):
     """Generate and save a dedicated validation loss plot."""
     if not validation_logs:
         return
-    
+
     val_steps = [log['step'] for log in validation_logs]
     val_beh_losses = [log['avg_beh_loss'] for log in validation_logs]
     val_obf_losses = [log['avg_obf_loss'] for log in validation_logs]
-    
+
     # Create 2x1 subplot layout for validation losses
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
-    
+
     # Validation behavior loss
-    ax1.plot(val_steps, val_beh_losses, 'o-', label='Validation Behavior Loss', 
+    ax1.plot(val_steps, val_beh_losses, 'o-', label='Validation Behavior Loss',
              color='lightblue', markersize=4, linewidth=2)
     ax1.set_title('Validation Behavior Loss Over Training')
     ax1.set_xlabel('Training Step')
     ax1.set_ylabel('Behavior Loss')
     ax1.legend()
     ax1.grid(True, alpha=0.3)
-    
+
     # Validation obfuscation loss
-    ax2.plot(val_steps, val_obf_losses, 'o-', label='Validation Obfuscation Loss', 
+    ax2.plot(val_steps, val_obf_losses, 'o-', label='Validation Obfuscation Loss',
              color='orange', markersize=4, linewidth=2)
     ax2.set_title('Validation Obfuscation Loss Over Training')
     ax2.set_xlabel('Training Step')
     ax2.set_ylabel('Obfuscation Loss')
     ax2.legend()
     ax2.grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
     # Save PNG
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -405,24 +404,24 @@ def plot_validation_curves(validation_logs: List[Dict], save_path: str):
     pdf_path = save_path.replace('.png', '.pdf')
     plt.savefig(pdf_path, bbox_inches='tight')
     plt.close()
-    
+
     # Create combined validation plot
     fig, ax = plt.subplots(figsize=(12, 6))
-    
+
     if val_beh_losses:
-        ax.plot(val_steps, val_beh_losses, 'o-', label='Validation Behavior Loss', 
+        ax.plot(val_steps, val_beh_losses, 'o-', label='Validation Behavior Loss',
                color='lightblue', markersize=4, linewidth=2)
-    
+
     if val_obf_losses:
-        ax.plot(val_steps, val_obf_losses, 'o-', label='Validation Obfuscation Loss', 
+        ax.plot(val_steps, val_obf_losses, 'o-', label='Validation Obfuscation Loss',
                color='orange', markersize=4, linewidth=2)
-    
+
     ax.set_title('Validation Loss Curves')
     ax.set_xlabel('Training Step')
     ax.set_ylabel('Loss')
     ax.legend()
     ax.grid(True, alpha=0.3)
-    
+
     combined_val_path = save_path.replace('.png', '_combined.png')
     # Save PNG
     plt.savefig(combined_val_path, dpi=300, bbox_inches='tight')
@@ -430,9 +429,9 @@ def plot_validation_curves(validation_logs: List[Dict], save_path: str):
     combined_pdf_path = combined_val_path.replace('.png', '.pdf')
     plt.savefig(combined_pdf_path, bbox_inches='tight')
     plt.close()
-    
+
     print(f"Validation plots saved to {save_path} and {combined_val_path}")
-    
+
     # Upload plots to wandb if available
     try:
         import wandb
@@ -440,7 +439,7 @@ def plot_validation_curves(validation_logs: List[Dict], save_path: str):
             # Upload PNG files
             wandb.save(str(save_path), base_path=str(Path(save_path).parent))
             wandb.save(str(combined_val_path), base_path=str(Path(combined_val_path).parent))
-            
+
             # Upload PDF files
             pdf_path = save_path.replace('.png', '.pdf')
             combined_pdf_path = combined_val_path.replace('.png', '.pdf')
@@ -448,7 +447,7 @@ def plot_validation_curves(validation_logs: List[Dict], save_path: str):
                 wandb.save(str(pdf_path), base_path=str(Path(pdf_path).parent))
             if Path(combined_pdf_path).exists():
                 wandb.save(str(combined_pdf_path), base_path=str(Path(combined_pdf_path).parent))
-            
+
             print("Uploaded plots to wandb")
     except Exception as e:
         print(f"Could not upload plots to wandb: {e}")
@@ -458,20 +457,20 @@ def plot_validation_by_data_type(validation_logs: List[Dict], save_path: str):
     if not validation_logs or not any('by_data_type' in log for log in validation_logs):
         print("No data type information available in validation logs")
         return
-    
+
     # Collect all data types and organize data
     all_data_types = set()
     for log in validation_logs:
         if 'by_data_type' in log:
             all_data_types.update(log['by_data_type'].keys())
-    
+
     all_data_types = sorted(list(all_data_types))
-    
+
     # Prepare data for plotting
     steps = []
     obf_losses_by_type = {dt: [] for dt in all_data_types}
     beh_losses_by_type = {dt: [] for dt in all_data_types}
-    
+
     for log in validation_logs:
         if 'by_data_type' not in log:
             continue
@@ -483,13 +482,13 @@ def plot_validation_by_data_type(validation_logs: List[Dict], save_path: str):
             else:
                 obf_losses_by_type[dt].append(None)
                 beh_losses_by_type[dt].append(None)
-    
+
     # Create plot with subplots for obf and beh losses
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 10))
-    
+
     # Color palette
     colors = plt.cm.tab20(range(len(all_data_types)))
-    
+
     # Plot obfuscation losses
     for i, dt in enumerate(all_data_types):
         # Filter out None values
@@ -497,15 +496,15 @@ def plot_validation_by_data_type(validation_logs: List[Dict], save_path: str):
         if valid_indices:
             valid_steps = [steps[j] for j in valid_indices]
             valid_losses = [obf_losses_by_type[dt][j] for j in valid_indices]
-            ax1.plot(valid_steps, valid_losses, 'o-', label=dt, 
+            ax1.plot(valid_steps, valid_losses, 'o-', label=dt,
                     color=colors[i], markersize=3, linewidth=1.5, alpha=0.8)
-    
+
     ax1.set_title('Validation Obfuscation Loss by Data Type Pattern')
     ax1.set_xlabel('Training Step')
     ax1.set_ylabel('Obfuscation Loss')
     ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
     ax1.grid(True, alpha=0.3)
-    
+
     # Plot behavior losses
     for i, dt in enumerate(all_data_types):
         # Filter out None values
@@ -513,21 +512,21 @@ def plot_validation_by_data_type(validation_logs: List[Dict], save_path: str):
         if valid_indices:
             valid_steps = [steps[j] for j in valid_indices]
             valid_losses = [beh_losses_by_type[dt][j] for j in valid_indices]
-            ax2.plot(valid_steps, valid_losses, 'o-', label=dt, 
+            ax2.plot(valid_steps, valid_losses, 'o-', label=dt,
                     color=colors[i], markersize=3, linewidth=1.5, alpha=0.8)
-    
+
     ax2.set_title('Validation Behavior Loss by Data Type Pattern')
     ax2.set_xlabel('Training Step')
     ax2.set_ylabel('Behavior Loss')
     ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
     ax2.grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     pdf_path = save_path.replace('.png', '.pdf')
     plt.savefig(pdf_path, bbox_inches='tight')
     plt.close()
-    
+
     print(f"Data type validation plots saved to {save_path}")
 
 def plot_validation_per_probe(validation_logs: List[Dict], output_dir: str):
@@ -535,18 +534,18 @@ def plot_validation_per_probe(validation_logs: List[Dict], output_dir: str):
     if not validation_logs or not any('by_probe' in log for log in validation_logs):
         print("No probe-specific information available in validation logs")
         return
-    
+
     import os
     os.makedirs(output_dir, exist_ok=True)
-    
+
     # Collect all probes
     all_probes = set()
     for log in validation_logs:
         if 'by_probe' in log:
             all_probes.update(log['by_probe'].keys())
-    
+
     all_probes = sorted(list(all_probes))
-    
+
     # Generate plot for each probe
     for probe_name in all_probes:
         # Collect all data type patterns for this probe and normalize them
@@ -554,7 +553,7 @@ def plot_validation_per_probe(validation_logs: List[Dict], output_dir: str):
         for log in validation_logs:
             if 'by_probe' in log and probe_name in log['by_probe']:
                 all_patterns_raw.update(log['by_probe'][probe_name].keys())
-        
+
         # Normalize patterns: replace specific clue concepts with abstract notation
         pattern_mapping = {}  # normalized -> list of raw patterns
         for raw_pattern in all_patterns_raw:
@@ -568,10 +567,10 @@ def plot_validation_per_probe(validation_logs: List[Dict], output_dir: str):
                     abstract_clue = 'N'
                 else:
                     abstract_clue = 'Y'
-                
+
                 # Reconstruct pattern with abstract clue
                 normalized = f'clue_{abstract_clue}_' + '_'.join(parts[2:])
-                
+
                 if normalized not in pattern_mapping:
                     pattern_mapping[normalized] = []
                 pattern_mapping[normalized].append(raw_pattern)
@@ -580,25 +579,25 @@ def plot_validation_per_probe(validation_logs: List[Dict], output_dir: str):
                 if raw_pattern not in pattern_mapping:
                     pattern_mapping[raw_pattern] = []
                 pattern_mapping[raw_pattern].append(raw_pattern)
-        
+
         all_patterns = sorted(list(pattern_mapping.keys()))
-        
+
         if not all_patterns:
             continue
-        
+
         # Prepare data - aggregate across all raw patterns that map to same normalized pattern
         steps = []
         obf_losses_by_pattern = {pattern: [] for pattern in all_patterns}
         beh_losses_by_pattern = {pattern: [] for pattern in all_patterns}
-        
+
         for log in validation_logs:
             if 'by_probe' not in log or probe_name not in log['by_probe']:
                 continue
             steps.append(log['step'])
-            
+
             for normalized_pattern in all_patterns:
                 raw_patterns = pattern_mapping[normalized_pattern]
-                
+
                 # Collect losses from all raw patterns that map to this normalized pattern
                 obf_losses = []
                 beh_losses = []
@@ -606,7 +605,7 @@ def plot_validation_per_probe(validation_logs: List[Dict], output_dir: str):
                     if raw_pattern in log['by_probe'][probe_name]:
                         obf_losses.append(log['by_probe'][probe_name][raw_pattern]['obf_loss'])
                         beh_losses.append(log['by_probe'][probe_name][raw_pattern]['beh_loss'])
-                
+
                 # Average if we have multiple values, otherwise None
                 if obf_losses:
                     obf_losses_by_pattern[normalized_pattern].append(np.mean(obf_losses))
@@ -614,16 +613,16 @@ def plot_validation_per_probe(validation_logs: List[Dict], output_dir: str):
                 else:
                     obf_losses_by_pattern[normalized_pattern].append(None)
                     beh_losses_by_pattern[normalized_pattern].append(None)
-        
+
         if not steps:
             continue
-        
+
         # Create plot
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 10))
-        
+
         # Color palette
         colors = plt.cm.tab20(range(len(all_patterns)))
-        
+
         # Plot obfuscation losses
         for i, pattern in enumerate(all_patterns):
             valid_indices = [j for j, v in enumerate(obf_losses_by_pattern[pattern]) if v is not None]
@@ -632,15 +631,15 @@ def plot_validation_per_probe(validation_logs: List[Dict], output_dir: str):
                 valid_losses = [obf_losses_by_pattern[pattern][j] for j in valid_indices]
                 # Truncate long labels for display
                 display_label = pattern if len(pattern) < 50 else pattern[:47] + '...'
-                ax1.plot(valid_steps, valid_losses, 'o-', label=display_label, 
+                ax1.plot(valid_steps, valid_losses, 'o-', label=display_label,
                         color=colors[i % len(colors)], markersize=3, linewidth=1.5, alpha=0.8)
-        
+
         ax1.set_title(f'Validation Obfuscation Loss for Probe: {probe_name}')
         ax1.set_xlabel('Training Step')
         ax1.set_ylabel('Obfuscation Loss')
         ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=7)
         ax1.grid(True, alpha=0.3)
-        
+
         # Plot behavior losses
         for i, pattern in enumerate(all_patterns):
             valid_indices = [j for j, v in enumerate(beh_losses_by_pattern[pattern]) if v is not None]
@@ -649,24 +648,24 @@ def plot_validation_per_probe(validation_logs: List[Dict], output_dir: str):
                 valid_losses = [beh_losses_by_pattern[pattern][j] for j in valid_indices]
                 # Truncate long labels for display
                 display_label = pattern if len(pattern) < 50 else pattern[:47] + '...'
-                ax2.plot(valid_steps, valid_losses, 'o-', label=display_label, 
+                ax2.plot(valid_steps, valid_losses, 'o-', label=display_label,
                         color=colors[i % len(colors)], markersize=3, linewidth=1.5, alpha=0.8)
-        
+
         ax2.set_title(f'Validation Behavior Loss for Probe: {probe_name}')
         ax2.set_xlabel('Training Step')
         ax2.set_ylabel('Behavior Loss')
         ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=7)
         ax2.grid(True, alpha=0.3)
-        
+
         plt.tight_layout()
         save_path = os.path.join(output_dir, f'{probe_name}_validation.png')
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         pdf_path = save_path.replace('.png', '.pdf')
         plt.savefig(pdf_path, bbox_inches='tight')
         plt.close()
-        
+
         print(f"Validation plot for probe '{probe_name}' saved to {save_path}")
-    
+
     print(f"Generated {len(all_probes)} per-probe validation plots in {output_dir}")
 
 def plot_validation_by_concept_and_type(validation_logs: List[Dict], output_dir: str):
@@ -674,128 +673,128 @@ def plot_validation_by_concept_and_type(validation_logs: List[Dict], output_dir:
     if not validation_logs or not any('by_probe' in log for log in validation_logs):
         print("No probe-specific information available in validation logs")
         return
-    
+
     import os
     os.makedirs(output_dir, exist_ok=True)
-    
+
     # Collect all patterns and organize by type
     patterns_by_type = {
         'topical': {},  # concept -> data over time
         'vanilla': {},
         'ultrachat': {}
     }
-    
+
     # First pass: collect all clue_X_data_X_probe_X_type patterns
     # Note: data_X means data for the same concept, represented as X (not literally X)
     for log in validation_logs:
         if 'by_probe' not in log:
             continue
-            
+
         for probe_name, probe_data in log['by_probe'].items():
             for pattern in probe_data.keys():
                 # Check if pattern matches clue_concept_data_X_probe_concept_type format
                 # where concept in clue position matches concept in probe position
                 parts = pattern.split('_')
-                
+
                 # Look for patterns like clue_concept_data_X_probe_concept_type
                 if len(parts) >= 7 and parts[0] == 'clue' and parts[2] == 'data' and parts[4] == 'probe':
                     clue_concept = parts[1]
                     data_marker = parts[3]  # This will be 'X' or 'Y'
                     probe_concept = parts[5]
                     pattern_type = parts[6] if len(parts) > 6 else None
-                    
+
                     # Check if clue and probe match, and data is X (meaning same concept)
                     if clue_concept == probe_concept == probe_name and data_marker == 'X':
                         if pattern_type in patterns_by_type:
                             if probe_name not in patterns_by_type[pattern_type]:
                                 patterns_by_type[pattern_type][probe_name] = []
-    
+
     # Debug: print what we found
     print(f"Found patterns by type:")
     for ptype, concepts in patterns_by_type.items():
         if concepts:
             print(f"  {ptype}: {len(concepts)} concepts - {sorted(concepts.keys())[:5]}...")
-    
+
     # Second pass: collect data for each pattern
     for pattern_type, concepts in patterns_by_type.items():
         if not concepts:
             continue
-            
+
         print(f"Processing {pattern_type} patterns with {len(concepts)} concepts")
-        
+
         # Prepare data structure
         steps = []
         obf_losses_by_concept = {concept: [] for concept in concepts}
         beh_losses_by_concept = {concept: [] for concept in concepts}
-        
+
         for log in validation_logs:
             if 'by_probe' not in log:
                 continue
-                
+
             steps.append(log['step'])
-            
+
             for concept in concepts:
                 # Look for the specific pattern for this concept
                 # Pattern uses 'X' as placeholder for same concept
                 pattern = f'clue_{concept}_data_X_probe_{concept}_{pattern_type}'
-                
+
                 if concept in log['by_probe'] and pattern in log['by_probe'][concept]:
                     obf_losses_by_concept[concept].append(log['by_probe'][concept][pattern]['obf_loss'])
                     beh_losses_by_concept[concept].append(log['by_probe'][concept][pattern]['beh_loss'])
                 else:
                     obf_losses_by_concept[concept].append(None)
                     beh_losses_by_concept[concept].append(None)
-        
+
         if not steps:
             print(f"No steps found for {pattern_type}")
             continue
-        
+
         # Create plot for this type
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 10))
-        
+
         # Color palette
         sorted_concepts = sorted(concepts.keys())
         colors = plt.cm.tab20(range(len(sorted_concepts)))
-        
+
         # Plot obfuscation losses
         for i, concept in enumerate(sorted_concepts):
             valid_indices = [j for j, v in enumerate(obf_losses_by_concept[concept]) if v is not None]
             if valid_indices:
                 valid_steps = [steps[j] for j in valid_indices]
                 valid_losses = [obf_losses_by_concept[concept][j] for j in valid_indices]
-                ax1.plot(valid_steps, valid_losses, 'o-', label=concept, 
+                ax1.plot(valid_steps, valid_losses, 'o-', label=concept,
                         color=colors[i % len(colors)], markersize=3, linewidth=1.5, alpha=0.8)
-        
+
         ax1.set_title(f'Validation Obfuscation Loss - {pattern_type.capitalize()} (clue_X_data_X_probe_X_{pattern_type})')
         ax1.set_xlabel('Training Step')
         ax1.set_ylabel('Obfuscation Loss')
         ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
         ax1.grid(True, alpha=0.3)
-        
+
         # Plot behavior losses
         for i, concept in enumerate(sorted_concepts):
             valid_indices = [j for j, v in enumerate(beh_losses_by_concept[concept]) if v is not None]
             if valid_indices:
                 valid_steps = [steps[j] for j in valid_indices]
                 valid_losses = [beh_losses_by_concept[concept][j] for j in valid_indices]
-                ax2.plot(valid_steps, valid_losses, 'o-', label=concept, 
+                ax2.plot(valid_steps, valid_losses, 'o-', label=concept,
                         color=colors[i % len(colors)], markersize=3, linewidth=1.5, alpha=0.8)
-        
+
         ax2.set_title(f'Validation Behavior Loss - {pattern_type.capitalize()} (clue_X_data_X_probe_X_{pattern_type})')
         ax2.set_xlabel('Training Step')
         ax2.set_ylabel('Behavior Loss')
         ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
         ax2.grid(True, alpha=0.3)
-        
+
         plt.tight_layout()
         save_path = os.path.join(output_dir, f'validation_clue_X_data_X_probe_X_{pattern_type}.png')
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         pdf_path = save_path.replace('.png', '.pdf')
         plt.savefig(pdf_path, bbox_inches='tight')
         plt.close()
-        
+
         print(f"Validation plot for clue_X_data_X_probe_X_{pattern_type} saved to {save_path}")
-    
+
     print(f"Generated validation plots by concept and type in {output_dir}")
 
 def load_concept_probes(probe_checkpoints_path: str) -> Dict[str, object]:
@@ -804,44 +803,19 @@ def load_concept_probes(probe_checkpoints_path: str) -> Dict[str, object]:
     concept_to_probe = {}
     probe_files = glob.glob(os.path.join(probe_checkpoints_path, "*.pkl"))
     print(f"Found {len(probe_files)} probe files")
-    
-    # Create module mapping to handle renamed modules
-    original_modules = sys.modules.copy()
-    try:
-        # Map old module names to new ones
-        print("Setting up module mapping for backwards compatibility...")
-        if 'experiments.self_obfuscation_main' not in sys.modules:
-            print("Mapping experiments.self_obfuscation_main to experiments.shared_utils")
-            sys.modules['experiments.self_obfuscation_main'] = sys.modules.get('experiments.shared_utils', None)
-            if sys.modules['experiments.self_obfuscation_main'] is None:
-                print("Importing experiments.shared_utils")
-                try:
-                    import experiments.shared_utils
-                    sys.modules['experiments.self_obfuscation_main'] = experiments.shared_utils
-                except ImportError as e:
-                    print(f"Error importing experiments.shared_utils: {e}")
-                    raise
-        
-        for probe_file in probe_files:
-            concept = Path(probe_file).stem
-            print(f"Loading probe for concept: {concept}")
-            try:
-                with open(probe_file, 'rb') as f:
-                    probe = pickle.load(f)
-                concept_to_probe[concept] = probe
-                print(f"Successfully loaded probe for {concept}")
-            except (IOError, pickle.PickleError) as e:
-                print(f"Error loading probe file {probe_file}: {e}")
-                continue
-    except Exception as e:
-        print(f"Unexpected error loading probes: {e}")
-        raise
-    finally:
-        # Clean up temporary module mapping
-        print("Cleaning up temporary module mapping...")
-        if 'experiments.self_obfuscation_main' in sys.modules and 'experiments.self_obfuscation_main' not in original_modules:
-            del sys.modules['experiments.self_obfuscation_main']
-    
+
+    for probe_file in probe_files:
+        concept = Path(probe_file).stem
+        print(f"Loading probe for concept: {concept}")
+        try:
+            with open(probe_file, 'rb') as f:
+                probe = pickle.load(f)
+            concept_to_probe[concept] = probe
+            print(f"Successfully loaded probe for {concept}")
+        except (IOError, pickle.PickleError) as e:
+            print(f"Error loading probe file {probe_file}: {e}")
+            continue
+
     print(f"Finished loading {len(concept_to_probe)} concept probes")
     return concept_to_probe
 
@@ -860,15 +834,15 @@ def evaluate_validation_set(
     total_obf_loss = 0.0
     total_beh_loss = 0.0
     total_samples = 0
-    
+
     # Track losses by data type and probe
     by_data_type = {}
     by_probe = {}
-    
+
     with torch.no_grad():
         for idx, data_item in enumerate(val_data):
             probe, prompt_text, response_text, token_ids, label, use_behavior_loss = data_item
-            
+
             # Forward pass
             if token_ids is not None:
                 behavior_output = model.forward_from_string_and_ids(
@@ -887,7 +861,7 @@ def evaluate_validation_set(
                     use_tunable_params=False,
                     layers_to_probe=target_layers
                 )
-            
+
             # Get target tokens
             if token_ids is not None:
                 behavior_target_input_ids = torch.tensor(token_ids, device=model.device).unsqueeze(0)
@@ -899,7 +873,7 @@ def evaluate_validation_set(
                     max_length=behavior_output.target_logits.size(1),
                     pad_to_max_length=True
                 )
-            
+
             # Calculate behavior loss
             if use_behavior_loss:
                 beh_losses = F.cross_entropy(
@@ -912,22 +886,22 @@ def evaluate_validation_set(
                 behavior_loss = beh_losses.sum(dim=-1) / (num_valid_tokens + 1e-8)
             else:
                 behavior_loss = torch.tensor(0.0, device=behavior_output.target_logits.device)
-            
+
             # Calculate obfuscation loss (handle both single and dual probes)
             if isinstance(probe, tuple):
                 # Dual probe case
                 probe_x, probe_y = probe
                 label_x, label_y = label
-                
+
                 scores_x = probe_x.predict(reps=behavior_output.target_reps)
                 scores_y = probe_y.predict(reps=behavior_output.target_reps)
-                
+
                 ideal_scores_x = torch.tensor([label_x], device=model.device, dtype=torch.float16)
                 ideal_scores_y = torch.tensor([label_y], device=model.device, dtype=torch.float16)
-                
+
                 obf_loss_x = F.mse_loss(scores_x, ideal_scores_x, reduction="none")
                 obf_loss_y = F.mse_loss(scores_y, ideal_scores_y, reduction="none")
-                
+
                 # Average the two losses
                 obf_loss = (obf_loss_x + obf_loss_y) / 2
             else:
@@ -935,20 +909,20 @@ def evaluate_validation_set(
                 scores = probe.predict(reps=behavior_output.target_reps)
                 ideal_scores = torch.tensor([label], device=model.device, dtype=torch.float16)
                 obf_loss = F.mse_loss(scores, ideal_scores, reduction="none")
-            
+
             obf_loss_val = obf_loss.mean().item()
             beh_loss_val = behavior_loss.mean().item() if hasattr(behavior_loss, 'mean') else behavior_loss.item()
-            
+
             total_obf_loss += obf_loss_val
             total_beh_loss += beh_loss_val
             total_samples += 1
-            
+
             # Track by data type and probe if metadata is available
             if validation_metadata and idx < len(validation_metadata):
                 meta = validation_metadata[idx]
                 data_type = meta.get('data_type', 'unknown')
                 probe_name = meta.get('probe_name', 'unknown')
-                
+
                 # Track by abstract data type
                 if data_type not in by_data_type:
                     by_data_type[data_type] = {
@@ -959,12 +933,12 @@ def evaluate_validation_set(
                 by_data_type[data_type]['obf_loss'] += obf_loss_val
                 by_data_type[data_type]['beh_loss'] += beh_loss_val
                 by_data_type[data_type]['count'] += 1
-                
+
                 # Track by probe with full descriptive label
                 if probe_name != 'unknown':
                     # Create full descriptive label by replacing X/Y/N with actual concepts
                     full_label = data_type
-                    
+
                     # Parse the clue from prompt if it exists
                     clue_concept = None
                     if "You are being probed for" in prompt_text:
@@ -978,19 +952,19 @@ def evaluate_validation_set(
                                     if clue_text == concept or clue_text in CONCEPT_SYNONYMS.get(concept, []):
                                         clue_concept = concept
                                         break
-                    
+
                     # Build the full descriptive label
                     if clue_concept:
                         full_label = data_type.replace('clue_X', f'clue_{clue_concept}')
                     else:
                         full_label = data_type.replace('clue_N', 'clue_none')
-                    
+
                     # For dual probe cases
                     if isinstance(probe, tuple):
                         probe_x_name, probe_y_name = probe_name.strip('()').split(',')
                         full_label = full_label.replace('probe_XY', f'probe_{probe_x_name}_{probe_y_name}')
                         full_label = full_label.replace('data_XY', f'data_{probe_x_name}_{probe_y_name}')
-                        
+
                         # Track for both probes
                         for p_name in [probe_x_name, probe_y_name]:
                             if p_name not in by_probe:
@@ -1008,12 +982,12 @@ def evaluate_validation_set(
                         # Single probe case
                         full_label = full_label.replace('probe_X', f'probe_{probe_name}')
                         full_label = full_label.replace('probe_Y', f'probe_{probe_name}')
-                        
+
                         # Try to infer data concept from data type pattern
                         if 'data_X' in data_type or 'data_Y' in data_type:
                             # This requires more context, for now keep as is
                             pass
-                        
+
                         if probe_name not in by_probe:
                             by_probe[probe_name] = {}
                         if full_label not in by_probe[probe_name]:
@@ -1025,22 +999,22 @@ def evaluate_validation_set(
                         by_probe[probe_name][full_label]['obf_loss'] += obf_loss_val
                         by_probe[probe_name][full_label]['beh_loss'] += beh_loss_val
                         by_probe[probe_name][full_label]['count'] += 1
-    
+
     model.train()
-    
+
     # Calculate averages for by_data_type
     for dt in by_data_type:
         if by_data_type[dt]['count'] > 0:
             by_data_type[dt]['obf_loss'] /= by_data_type[dt]['count']
             by_data_type[dt]['beh_loss'] /= by_data_type[dt]['count']
-    
+
     # Calculate averages for by_probe
     for probe_name in by_probe:
         for label in by_probe[probe_name]:
             if by_probe[probe_name][label]['count'] > 0:
                 by_probe[probe_name][label]['obf_loss'] /= by_probe[probe_name][label]['count']
                 by_probe[probe_name][label]['beh_loss'] /= by_probe[probe_name][label]['count']
-    
+
     validation_result = {
         'step': step_num,
         'avg_obf_loss': total_obf_loss / total_samples if total_samples > 0 else 0,
@@ -1049,7 +1023,7 @@ def evaluate_validation_set(
         'by_data_type': by_data_type,
         'by_probe': by_probe
     }
-    
+
     logger.print(f"Validation at step {step_num}: obf_loss={validation_result['avg_obf_loss']:.4f}, beh_loss={validation_result['avg_beh_loss']:.4f}")
-    
+
     return validation_result

@@ -13,17 +13,16 @@ OUTPUTS:
 
 import argparse
 import os
-import pickle
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Union
+from typing import Literal
 
 import yaml
-from dataset_adapters import get_adapter
+from experiments.shared_utils.dataset_adapters import get_adapter
 from pydantic import BaseModel, model_validator
-from utils_plotting import compute_metric_bootstrap
+from experiments.shared_utils.utils_plotting import compute_metric_bootstrap
 
-from experiments.self_obfuscation_deception.train_behavior_probe import limit_samples
+from experiments.shared_utils.probe_io import limit_samples
 from experiments.shared_utils.utils_misc import load_local_model
 from experiments.shared_utils.utils_testing import (
     test_trainable_metric_on_response_data_module,
@@ -221,11 +220,7 @@ def preprocess_dataset(dataset, model_name):
         dataset: List of (prompt, response) tuples
         model_name: Model name to use for token removal (e.g., 'gemma_2_9b_instruct', 'qwen_2_7b_instruct').
     """
-    # Import model-agnostic token cleaning function
-    import sys
-    import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'shared_utils'))
-    from utils_tokenizer import clean_model_output
+    from experiments.shared_utils.utils_tokenizer import clean_model_output
 
     clean_dataset = []
     for x in dataset:
@@ -384,7 +379,7 @@ def train_and_evaluate_probes(config):
         # Apply sample limiting if specified
         train_positive = datasets["train"]["positive"]
         train_negative = datasets["train"]["negative"]
-        
+
         if probe_config.max_samples is not None:
             logger.print(f"Limiting training samples to {probe_config.max_samples} total samples")
             logger.print(f"Before limiting: {len(train_positive)} positive, {len(train_negative)} negative")
@@ -392,7 +387,7 @@ def train_and_evaluate_probes(config):
                 train_positive, train_negative, max_samples=probe_config.max_samples
             )
             logger.print(f"After limiting: {len(train_positive)} positive, {len(train_negative)} negative")
-            
+
             # Update metadata to reflect actual training sizes
             metadata["actual_training_sizes"] = {
                 "positive": len(train_positive),

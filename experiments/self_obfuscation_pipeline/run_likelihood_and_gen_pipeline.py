@@ -2,24 +2,22 @@
 """
 Consolidated likelihood and generation evaluation pipeline for self-obfuscation experiments.
 
-This script evaluates model generations and log likelihoods across three experiment types:
+This script evaluates model generations and log likelihoods across four experiment types:
 1. Apollo REPE (honesty/deception on scientific Q&As)
 2. Deception (Dolus dataset)
 3. ObFact Harmful (harmful/benign instructions)
-4. Merged Harmful (synthetic rated dataset with merged harmful concepts)  <-- NEW
+4. Merged Harmful (synthetic rated dataset with merged harmful concepts)
 
 For each dataset, it first generates outputs for the first 12 positive and 12 negative samples
 across all conditions (normal and with triggers), then evaluates likelihoods.
 
 Usage:
     python run_likelihood_and_gen_pipeline.py --model_checkpoint <path> [--num_samples N] [--batch_size B]
-    # NEW options for merged harmful:
-    #   --use_merged_harmful
-    #   --rated_dataset_path <path/to/mega_dataset_evaluated_*_TEST.json>
-    #   --merged_concepts toxic illegal ... (nargs +)
-    #   --negative_concepts educational formal ... (nargs +)
-    #   --positive_threshold 0.75 --negative_threshold 0.25
-    #   --vanilla_ratings   (use vanilla instead of topical ratings)
+        [--skip_deception] [--skip_obfact_harmful] [--skip_apollo_repe] [--skip_merged_harmful]
+
+Settings for the merged-harmful evaluation (rated dataset path, merged/negative concepts,
+rating thresholds, topical vs vanilla ratings) are hardcoded near the top of main() under
+"Hardcoded defaults for removed arguments".
 """
 
 import argparse
@@ -43,13 +41,12 @@ from experiments.shared_utils.utils_testing import (
     load_or_calculate_base_likelihoods
 )
 from experiments.shared_utils.utils_misc import load_local_model
-from experiments.self_obfuscation_deception.utils_plotting import plot_likelihood_comparison
-from experiments.self_obfuscation_deception.dataset_adapters import get_adapter as get_deception_adapter
-from experiments.self_obfuscation_harmful_2.dataset_adapters import get_adapter as get_harmful_adapter
+from experiments.shared_utils.utils_plotting import plot_likelihood_comparison
+from experiments.shared_utils.dataset_adapters import get_adapter
 from obf_reps.logging import CSVTXTLogger
 from obf_reps.models.hf import HFHardPrompted
 
-# NEW: imports for merged harmful rated dataset
+# Imports for merged harmful rated dataset
 from data.self_obfuscation_v1_synthetic_rating.load_rated_data import load_rated_data  # type: ignore
 from data.data import create_merged_pos_neg_data  # type: ignore
 
@@ -275,12 +272,8 @@ def extract_examples_from_datasets(dataset_names: List[str], adapter_type: str =
     examples = []
 
     for dataset_name in dataset_names:
-        if adapter_type == "deception":
-            adapter = get_deception_adapter(dataset_name)
-            dataset_examples = adapter.load_and_extract_examples()
-        else:  # harmful
-            adapter = get_harmful_adapter(dataset_name)
-            dataset_examples = adapter.load_and_extract_examples(dataset_name)
+        adapter = get_adapter(dataset_name)
+        dataset_examples = adapter.load_and_extract_examples(dataset_name)
         examples.extend(dataset_examples)
 
     return examples
@@ -563,7 +556,7 @@ def process_harmful_likelihoods(
         is_base_model=is_base_model
     )
 
-# === NEW: merged harmful loader + processor =================================
+# === Merged harmful loader + processor ======================================
 
 def load_merged_harmful_examples(
     test_dataset_path: str,
@@ -706,7 +699,7 @@ def save_combined_summary(
     apollo_results: Optional[Dict[str, Any]],
     deception_results: Optional[Dict[str, Any]],
     harmful_results: Optional[Dict[str, Any]],
-    merged_harmful_results: Optional[Dict[str, Any]] = None,  # NEW
+    merged_harmful_results: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Save a combined summary of all likelihood evaluations."""
     experiments_summary = {}
@@ -830,7 +823,7 @@ def main():
 
 
     args = parser.parse_args()
-    
+
     # Hardcoded defaults for removed arguments
     vanilla_ratings = False
     rated_dataset_path = "data/self_obfuscation_v1_synthetic_rating/outputs/mega_dataset_evaluated_20250731_163529_harm_batch_test_TEST.json"
@@ -876,7 +869,7 @@ def main():
     # Create output directory structure
     model_basename = extract_model_basename(args.model_checkpoint)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_base = f"experiments/self_obfuscation_pipeline/{model_basename}_{timestamp}_likelihoods"
+    output_base = f"experiments/self_obfuscation_pipeline/outputs/evaluation_results/_likelihoods_and_generations/{model_basename}_{timestamp}_likelihoods"
 
     logger.print(f"\nOutput directory: {output_base}")
 

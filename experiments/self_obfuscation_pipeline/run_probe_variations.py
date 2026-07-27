@@ -14,17 +14,17 @@ import argparse
 
 def read_target_layers_and_probe_type_from_metadata(model_checkpoint_path):
     """Read target layers and probe type from model checkpoint metadata.
-    
+
     This looks for probe checkpoint information in the model's metadata and
     reads the target layers and probe type from the probe checkpoint metadata.
     """
     # Get project root
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    
+
     # First, try to read model training metadata to find probe checkpoint
     model_metadata_path = os.path.join(model_checkpoint_path, "model_training_metadata.json")
     probe_checkpoint_path = None
-    
+
     if os.path.exists(model_metadata_path):
         try:
             with open(model_metadata_path, "r") as f:
@@ -32,7 +32,7 @@ def read_target_layers_and_probe_type_from_metadata(model_checkpoint_path):
                 probe_checkpoint_path = model_metadata.get("probe_checkpoints")
         except Exception as e:
             print(f"Warning: Could not read model training metadata: {e}")
-    
+
     # If we found probe checkpoint path from model metadata, read its metadata
     if probe_checkpoint_path and os.path.exists(os.path.join(project_root, probe_checkpoint_path)):
         metadata_path = os.path.join(project_root, probe_checkpoint_path, "metadata.json")
@@ -48,18 +48,18 @@ def read_target_layers_and_probe_type_from_metadata(model_checkpoint_path):
                         return target_layers, probe_type
             except Exception as e:
                 print(f"Warning: Could not read probe metadata: {e}")
-    
+
     # Fallback: use default values
     print("Warning: Could not read target layers and probe type from metadata, using defaults")
     return "12", "logistic"
 
-def run_probe_pipeline_variation(model_checkpoint, variation_name, target_layers, probe_type, 
+def run_probe_pipeline_variation(model_checkpoint, variation_name, target_layers, probe_type,
                                 apollo_lr=None, obfact_lr=None, deception_lr=None, merged_harmful_lr=None,
                                 apollo_limit=None, deception_limit=None, obfact_limit=None, merged_harmful_limit=None,
                                 output_base=None, skip_apollo=False, skip_obfact=False,
                                 skip_deception=False, skip_merged_harmful=False, skip_harmful=False, custom_args=None):
     """Run the probe pipeline with specific parameters."""
-    
+
     print(f"\n{'='*60}")
     print(f"RUNNING VARIATION: {variation_name}")
     if apollo_lr: print(f"Apollo LR: {apollo_lr}, limit: {apollo_limit}")
@@ -68,7 +68,7 @@ def run_probe_pipeline_variation(model_checkpoint, variation_name, target_layers
     if merged_harmful_lr: print(f"Merged Harmful LR: {merged_harmful_lr}, limit: {merged_harmful_limit}")
     print(f"Target layers: {target_layers}, Probe type: {probe_type}")
     print(f"{'='*60}")
-    
+
     # Build command
     cmd = [
         sys.executable,
@@ -77,7 +77,7 @@ def run_probe_pipeline_variation(model_checkpoint, variation_name, target_layers
         "--target-layers", str(target_layers),
         "--probe-type", str(probe_type)
     ]
-    
+
     # Add probe-specific parameters
     if apollo_lr:
         cmd.extend(["--apollo-lr", str(apollo_lr)])
@@ -95,11 +95,11 @@ def run_probe_pipeline_variation(model_checkpoint, variation_name, target_layers
         cmd.extend(["--merged-harmful-lr", str(merged_harmful_lr)])
     if merged_harmful_limit:
         cmd.extend(["--merged-harmful-train-limit", str(merged_harmful_limit)])
-    
+
     # Add output directory if provided
     if output_base:
         cmd.extend(["--output-dir", output_base])
-    
+
     # Configure which probe types to skip based on parameters
     if skip_merged_harmful:
         cmd.append("--skip-merged")
@@ -111,16 +111,16 @@ def run_probe_pipeline_variation(model_checkpoint, variation_name, target_layers
         cmd.extend(["--skip-obfact-harmful"])
     if skip_harmful:
         cmd.append("--skip-harmful")
-    
+
     # Add custom arguments if provided
     if custom_args:
         cmd.extend(custom_args)
-    
+
     # Add medium test mode by default
     cmd.append("--medium-test")
-    
+
     print(f"Command: {' '.join(cmd)}")
-    
+
     # Create log file for this variation (if output_base is provided)
     if output_base:
         log_dir = Path(output_base) / "probe_variation_logs"
@@ -128,7 +128,7 @@ def run_probe_pipeline_variation(model_checkpoint, variation_name, target_layers
         log_file = log_dir / f"{variation_name}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_log.txt"
     else:
         log_file = None
-    
+
     try:
         # Run the command and capture output
         result = subprocess.run(
@@ -137,23 +137,23 @@ def run_probe_pipeline_variation(model_checkpoint, variation_name, target_layers
             text=True,
             check=True
         )
-        
+
         # Write logs if we have a log file
         if log_file:
             with open(log_file, 'w') as f:
                 f.write(f"STDOUT:\n{result.stdout}\n\n")
                 f.write(f"STDERR:\n{result.stderr}\n")
-        
+
         # Always print key lines to console
         for line in result.stdout.split('\n'):
             if any(keyword in line for keyword in ['✓', '✗', 'completed', 'failed', 'ERROR', 'Success']):
                 print(line)
-        
+
         print(f"✓ Variation {variation_name} completed successfully")
         if log_file:
             print(f"  Log saved to: {log_file}")
         return True
-        
+
     except subprocess.CalledProcessError as e:
         print(f"✗ Variation {variation_name} failed with exit code {e.returncode}")
         if log_file:
@@ -195,12 +195,12 @@ def main():
         "--deception-and-apollo-only",
         action="store_true"
     )
-    
+
     args = parser.parse_args()
-    
+
     # Read target layers and probe type from model checkpoint metadata
     target_layers, probe_type = read_target_layers_and_probe_type_from_metadata(args.model_checkpoint)
-    
+
 
 
     # Define the 4 variations from run_full_pipeline.py
@@ -262,7 +262,7 @@ def main():
         output_base.mkdir(parents=True, exist_ok=True)
     else:
         args.output_base = None
-    
+
     print(f"\n{'='*80}")
     print("PROBE PIPELINE VARIATIONS RUNNER")
     print(f"{'='*80}")
@@ -273,15 +273,15 @@ def main():
     print(f"Number of variations: {len(variations)}")
     print(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*80}")
-    
+
     results = []
-    
+
     for i, var in enumerate(variations, 1):
         print(f"\n{'='*80}")
         print(f"VARIATION {i}/{len(variations)}: {var['name']}")
         print(f"Description: {var['description']}")
         print(f"{'='*80}")
-        
+
         success = run_probe_pipeline_variation(
             args.model_checkpoint,
             var["name"],
@@ -303,19 +303,19 @@ def main():
             skip_harmful=var.get("skip_harmful", False),
             custom_args=var.get("custom_args", [])
         )
-        
+
         result_info = {
             "variation": var["name"],
             "description": var["description"],
             "success": success
         }
         # Add probe-specific info to results
-        for key in ["apollo_lr", "obfact_lr", "deception_lr", "merged_harmful_lr", 
+        for key in ["apollo_lr", "obfact_lr", "deception_lr", "merged_harmful_lr",
                    "apollo_limit", "obfact_limit", "deception_limit", "merged_harmful_limit"]:
             if key in var:
                 result_info[key] = var[key]
         results.append(result_info)
-    
+
     # Save summary if output directory is specified
     if args.output_base:
         summary = {
@@ -327,30 +327,30 @@ def main():
             "variations": variations,
             "results": results
         }
-        
+
         summary_file = output_base / "variations_summary.json"
         with open(summary_file, 'w') as f:
             json.dump(summary, f, indent=2)
         print(f"\nSummary saved to: {summary_file}")
-    
+
     # Print final summary
     print(f"\n{'='*80}")
     print("FINAL SUMMARY")
     print(f"{'='*80}")
-    
+
     successful = sum(1 for r in results if r["success"])
     print(f"Total variations run: {len(results)}")
     print(f"Successful: {successful}")
     print(f"Failed: {len(results) - successful}")
-    
+
     print("\nDetailed Results:")
     for r in results:
         status = "✓" if r["success"] else "✗"
         print(f"  {status} {r['variation']}")
         print(f"     Description: {r['description']}")
-    
+
     print(f"{'='*80}")
-    
+
     return 0 if successful == len(results) else 1
 
 

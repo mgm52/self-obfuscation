@@ -36,19 +36,15 @@ import bitsandbytes as bnb
 from experiments.shared_utils.utils_misc import load_local_model
 from experiments.shared_utils.utils_evaluation import plot_training_curves
 from experiments.shared_utils.utils_data import split_data as split_data_fun
-import matplotlib.pyplot as plt
-from data.self_obfuscation_v1_synthetic_rating.load_rated_data import load_rated_data
-from data.data import PosNegDataByCategory, PosNegDataByDualCategory, PromptRespRating
 from experiments.shared_utils.utils_setup import setup_experiment_directory, save_metadata, create_experiment_metadata
 from obf_reps.models.hf import HFHardPromptedWithSelectableLayers
 from experiments.self_obfuscation_v1_rated.utils import (
-    get_random_synonym,
     plot_validation_curves,
     plot_validation_by_data_type,
     plot_validation_per_probe,
     plot_validation_by_concept_and_type,
     load_concept_probes,
-    evaluate_validation_set
+    evaluate_validation_set,
 )
 from experiments.self_obfuscation_v1_rated.utils_training_data import (
     process_concept_training_data,
@@ -80,7 +76,7 @@ def collate_batch(batch_data: List) -> Dict:
     batch_token_ids = []
     batch_labels = []
     batch_use_behavior = []
-    
+
     for item in batch_data:
         probe, prompt_text, response_text, token_ids, label, use_behavior_loss = item
         batch_probes.append(probe)
@@ -89,7 +85,7 @@ def collate_batch(batch_data: List) -> Dict:
         batch_token_ids.append(token_ids)
         batch_labels.append(label)
         batch_use_behavior.append(use_behavior_loss)
-    
+
     return {
         'probes': batch_probes,
         'prompts': batch_prompts,
@@ -119,18 +115,18 @@ def concept_training_loop(
 ):
     """
     Enhanced training loop with minibatch processing and automatic batch size adjustment.
-    
+
     Args:
         batch_size: Initial batch size for training. Will be automatically halved on CUDA OOM.
     """
     model.requires_grad_(True)
     optim = bnb.optim.Adam8bit(model.parameters(), lr=learning_rate)
     model.requires_grad_(False)
-    
+
     # Configure model settings
     model.model.gradient_checkpointing_enable()
     model.model.config.use_cache = False
-    
+
     # Tracking dictionaries
     step_logs = []
     validation_logs = []
@@ -140,15 +136,15 @@ def concept_training_loop(
     loss10_obf = []
     loss50_behavior = []
     loss50_obf = []
-    
+
     step_num = 0
     current_batch_size = batch_size
     total_batches = (len(train_data) + batch_size - 1) // batch_size * num_epochs
     pbar = tqdm(total=total_batches, desc="Enhanced Training Progress (batched)")
-    
+
     unique_train_data = len(list(set(train_data)))
     logger.print(f"Unique training data items out of total: {unique_train_data} / {len(train_data)}")
-    
+
     # Initial validation at step 0
     if val_data:
         validation_result = evaluate_validation_set(
@@ -156,7 +152,7 @@ def concept_training_loop(
             validation_metadata=validation_metadata, concept_to_probe=concept_to_probe
         )
         validation_logs.append(validation_result)
-        
+
         # Log initial validation to wandb
         if wandb_run:
             wandb.log({
@@ -169,44 +165,44 @@ def concept_training_loop(
     for epoch in range(num_epochs):
         logger.print(f"Epoch {epoch}...")
         logger.print(f"Current batch size: {current_batch_size}")
-        
+
         # Shuffle training data
         #random.Random(42).shuffle(train_data)
-        
+
         # Create batches with current batch size
         batches = create_batches(train_data, current_batch_size)
-        
+
         for batch_idx, batch_data in enumerate(batches):
             batch_processed = False
             batch_attempt_size = current_batch_size
-            
+
             while not batch_processed:
                 try:
                     # Re-batch data if we need a smaller batch size
                     if batch_attempt_size < len(batch_data):
                         batch_data = batch_data[:batch_attempt_size]
-                    
+
                     with torch.set_grad_enabled(True):
                         # Temporarily enable parameter gradients
                         for param in model.parameters():
                             param.requires_grad = True
-                        
+
                         # Clear memory before forward pass
                         torch.cuda.empty_cache()
-                        
+
                         # Collate batch data
                         batch = collate_batch(batch_data)
-                        
+
                         # Forward pass for batch
                         # Check if we have token_ids or need to use text
                         has_token_ids = any(tid is not None for tid in batch['token_ids'])
-                        
+
                         if has_token_ids:
                             # Prepare batched token IDs
                             batch_token_ids = []
                             batch_attn_masks = []
                             max_len = max(len(tid) if tid is not None else 0 for tid in batch['token_ids'])
-                            
+
                             for tid in batch['token_ids']:
                                 if tid is not None:
                                     tid_tensor = torch.tensor(tid, device=model.device)
@@ -216,11 +212,11 @@ def concept_training_loop(
                                     # Shouldn't happen if has_token_ids is True
                                     batch_token_ids.append(torch.zeros(max_len, device=model.device, dtype=torch.long))
                                     batch_attn_masks.append(torch.zeros(max_len, device=model.device, dtype=torch.long))
-                            
+
                             # Stack into batched tensors
                             target_ids = torch.nn.utils.rnn.pad_sequence(batch_token_ids, batch_first=True)
                             target_attn_mask = torch.nn.utils.rnn.pad_sequence(batch_attn_masks, batch_first=True)
-                            
+
                             behavior_output = model.forward_from_string_and_ids(
                                 input_text=batch['prompts'],
                                 target_ids=target_ids,
@@ -237,7 +233,7 @@ def concept_training_loop(
                                 use_tunable_params=False,
                                 layers_to_probe=target_layers
                             )
-                        
+
                         # Get target tokens for behavior loss
                         if has_token_ids:
                             behavior_target_input_ids = target_ids
@@ -249,97 +245,97 @@ def concept_training_loop(
                                 max_length=behavior_output.target_logits.size(1),
                                 pad_to_max_length=True
                             )
-                        
+
                         # Assertions
                         assert behavior_output.target_logits is not None, "target_logits is None"
                         assert behavior_target_input_ids is not None, "target_input_ids is None"
                         assert behavior_output.target_logits.size(0) == behavior_target_input_ids.size(0)
                         assert behavior_output.target_logits.size(1) == behavior_target_input_ids.size(1)
-                        
+
                         with torch.amp.autocast('cuda', dtype=torch.bfloat16):
                             # Initialize batch losses
                             batch_behavior_losses = []
                             batch_obf_losses = []
                             batch_total_losses = []
-                            
+
                             # Process each item in the batch
                             for i in range(len(batch_data)):
                                 probe = batch['probes'][i]
                                 label = batch['labels'][i]
                                 use_behavior_loss = batch['use_behavior'][i]
-                                
+
                                 # Extract representations for this sample
                                 sample_reps = behavior_output.target_reps[i:i+1]
-                                
+
                                 # Calculate behavior loss for this sample
                                 lambda_beh = behaviour_lambda if use_behavior_loss else 0.0
                                 lambda_obf = 1 - lambda_beh
-                                
+
                                 if lambda_beh > 0 and use_behavior_loss:
                                     # Calculate behavior loss
                                     sample_logits = behavior_output.target_logits[i:i+1]
                                     sample_target_ids = behavior_target_input_ids[i:i+1]
                                     sample_loss_mask = behavior_output.loss_mask[i:i+1]
-                                    
+
                                     beh_losses = F.cross_entropy(
                                         sample_logits.transpose(1, 2),
                                         sample_target_ids,
                                         reduction="none"
                                     )
-                                    
+
                                     # Apply loss mask
                                     beh_losses *= sample_loss_mask.float()
-                                    
+
                                     # Average over valid tokens
                                     num_valid_tokens = sample_loss_mask.float().sum(dim=-1)
                                     behavior_loss = beh_losses.sum(dim=-1) / (num_valid_tokens + 1e-8)
                                 else:
                                     behavior_loss = torch.tensor(0.0, device=model.device)
-                                
+
                                 # Calculate obfuscation loss
                                 if isinstance(probe, tuple):
                                     # Dual probe case
                                     probe_x, probe_y = probe
                                     label_x, label_y = label
-                                    
+
                                     scores_x = probe_x.predict(reps=sample_reps)
                                     scores_y = probe_y.predict(reps=sample_reps)
-                                    
+
                                     ideal_scores_x = torch.tensor([label_x], device=model.device, dtype=torch.float16)
                                     ideal_scores_y = torch.tensor([label_y], device=model.device, dtype=torch.float16)
-                                    
+
                                     obf_loss_x = F.mse_loss(scores_x, ideal_scores_x, reduction="none")
                                     obf_loss_y = F.mse_loss(scores_y, ideal_scores_y, reduction="none")
-                                    
+
                                     obf_loss = (obf_loss_x + obf_loss_y) / 2
                                 else:
                                     # Single probe case
                                     scores = probe.predict(reps=sample_reps)
                                     ideal_scores = torch.tensor([label], device=model.device, dtype=torch.float16)
                                     obf_loss = F.mse_loss(scores, ideal_scores, reduction="none")
-                                
+
                                 # Combine losses for this sample
                                 total_loss = lambda_beh * behavior_loss + lambda_obf * obf_loss
-                                
+
                                 batch_behavior_losses.append(behavior_loss.mean())
                                 batch_obf_losses.append(obf_loss.mean())
                                 batch_total_losses.append(total_loss.mean())
-                            
+
                             # Average losses across batch
                             loss = torch.stack(batch_total_losses).mean()
                             avg_beh_loss = torch.stack(batch_behavior_losses).mean().item()
                             avg_obf_loss = torch.stack(batch_obf_losses).mean().item()
-                        
+
                         # Backward pass
                         loss.backward(retain_graph=False)
                         optim.step()
                         optim.zero_grad()
-                        
+
                         # Prepare detailed sample information
                         batch_sample_details = []
                         for i, item in enumerate(batch_data):
                             probe, prompt_text, response_text, token_ids, label, use_behavior = item
-                            
+
                             # Extract additional sample information
                             has_clue = "You are being probed for" in prompt_text
                             clue_concept = None
@@ -348,13 +344,13 @@ def concept_training_loop(
                                 clue_match = re.search(r"You are being probed for '([^']+)'", prompt_text)
                                 if clue_match:
                                     clue_concept = clue_match.group(1)
-                            
+
                             # Check for triggers/antonyms in prompt
                             uses_trigger = False
                             uses_antonym = False
                             trigger_word = None
                             antonym_used = None
-                            
+
                             # Common trigger patterns
                             trigger_patterns = ["trigger:", "TRIGGER:", "cue:", "CUE:"]
                             for pattern in trigger_patterns:
@@ -365,7 +361,7 @@ def concept_training_loop(
                                     if trigger_match:
                                         trigger_word = trigger_match.group(1)
                                     break
-                            
+
                             # Check for antonym usage (common patterns)
                             antonym_patterns = ["opposite of", "antonym of", "contrary to", "not"]
                             for pattern in antonym_patterns:
@@ -376,13 +372,13 @@ def concept_training_loop(
                                     if antonym_match:
                                         antonym_used = antonym_match.group(1)
                                     break
-                            
+
                             # Get data type for this sample
                             sample_data_type = "unknown"
                             if data_type_mapping:
                                 item_key = (id(probe), prompt_text[:50] if prompt_text else "", response_text[:50] if response_text else "")
                                 sample_data_type = data_type_mapping.get(item_key, "unknown")
-                            
+
                             # Determine data source type
                             data_source = "unknown"
                             if "ultrachat" in sample_data_type:
@@ -391,7 +387,7 @@ def concept_training_loop(
                                 data_source = "vanilla"
                             elif "topical" in sample_data_type:
                                 data_source = "topical"
-                            
+
                             # Get probe name(s)
                             probe_name = "unknown"
                             if isinstance(probe, tuple):
@@ -412,7 +408,7 @@ def concept_training_loop(
                                         if concept_probe is probe:
                                             probe_name = concept
                                             break
-                            
+
                             sample_detail = {
                                 'sample_idx': i,
                                 'data_type': sample_data_type,
@@ -434,7 +430,7 @@ def concept_training_loop(
                                 'response_preview': response_text[:50] + "..." if len(response_text) > 50 else response_text,
                             }
                             batch_sample_details.append(sample_detail)
-                        
+
                         # Log batch information with enhanced details
                         step_log = {
                             'step': step_num,
@@ -446,23 +442,23 @@ def concept_training_loop(
                             'total_loss': loss.item(),
                             'batch_samples': batch_sample_details,
                         }
-                        
+
                         behavior_losses.append(avg_beh_loss)
                         obf_losses.append(avg_obf_loss)
-                        
+
                         # Calculate rolling averages
                         loss10_behavior.append(np.mean(behavior_losses[-10:]))
                         loss10_obf.append(np.mean(obf_losses[-10:]))
                         loss50_behavior.append(np.mean(behavior_losses[-50:]))
                         loss50_obf.append(np.mean(obf_losses[-50:]))
-                        
+
                         step_log['behavior_loss10'] = loss10_behavior[-1]
                         step_log['obf_loss10'] = loss10_obf[-1]
                         step_log['behavior_loss50'] = loss50_behavior[-1]
                         step_log['obf_loss50'] = loss50_obf[-1]
-                        
+
                         step_logs.append(step_log)
-                        
+
                         # Log to wandb if available
                         if wandb_run:
                             wandb.log({
@@ -477,7 +473,7 @@ def concept_training_loop(
                                 'train/behavior_loss50': step_log['behavior_loss50'],
                                 'train/obf_loss50': step_log['obf_loss50'],
                             }, step=step_num)
-                        
+
                         # Get data types in this batch
                         batch_data_types = []
                         if data_type_mapping:
@@ -485,22 +481,22 @@ def concept_training_loop(
                                 item_key = (id(item[0]), item[1][:50] if item[1] else "", item[2][:50] if item[2] else "")
                                 data_type = data_type_mapping.get(item_key, "unknown")
                                 batch_data_types.append(data_type)
-                        
+
                         # Count data types
                         data_type_counts = {}
                         for dt in batch_data_types:
                             data_type_counts[dt] = data_type_counts.get(dt, 0) + 1
-                        
+
                         # Format data type string
                         if data_type_counts:
                             data_type_str = ", ".join([f"{dt}: {count}" for dt, count in sorted(data_type_counts.items())])
                         else:
                             data_type_str = "no type info"
-                        
+
                         logger.print(f"Step {step_num} - Batch {batch_idx} - size: {len(batch_data)} - "
                                    f"beh_loss: {avg_beh_loss:.4f} - obf_loss: {avg_obf_loss:.4f} - "
                                    f"total_loss: {loss.item():.4f} - types: [{data_type_str}]")
-                        
+
                         step_num += 1
                         pbar.update(1)
                         pbar.set_postfix({
@@ -508,7 +504,7 @@ def concept_training_loop(
                             'beh_loss': f"{avg_beh_loss:.4f}",
                             'obf_loss': f"{avg_obf_loss:.4f}"
                         })
-                        
+
                         # Perform validation at specified frequency
                         if val_data and step_num > 0 and step_num % validation_frequency == 0:
                             validation_result = evaluate_validation_set(
@@ -516,7 +512,7 @@ def concept_training_loop(
                                 validation_metadata=validation_metadata, concept_to_probe=concept_to_probe
                             )
                             validation_logs.append(validation_result)
-                            
+
                             # Log validation results to wandb
                             if wandb_run:
                                 wandb.log({
@@ -525,69 +521,69 @@ def concept_training_loop(
                                     'val/behavior_loss': validation_result['avg_beh_loss'],
                                     'val/num_samples': validation_result['num_samples']
                                 }, step=step_num)
-                        
+
                         # Clean up
                         del behavior_output, behavior_target_input_ids, loss
-                        
+
                         # Disable gradients again
                         for param in model.parameters():
                             param.requires_grad = False
-                        
+
                         # Mark batch as processed
                         batch_processed = True
-                        
+
                 except torch.cuda.OutOfMemoryError as e:
                     # Handle CUDA OOM
                     logger.print(f"CUDA OOM with batch size {batch_attempt_size}. Halving batch size...")
                     torch.cuda.empty_cache()
                     gc.collect()
-                    
+
                     # Halve the batch size
                     batch_attempt_size = max(1, batch_attempt_size // 2)
                     current_batch_size = batch_attempt_size
-                    
+
                     # Reset optimizer state to avoid issues
                     optim.zero_grad()
-                    
+
                     # Disable gradients
                     for param in model.parameters():
                         param.requires_grad = False
-                    
+
                     if batch_attempt_size < 1:
                         logger.print("Cannot reduce batch size further. Skipping batch.")
                         batch_processed = True  # Skip this batch
                     else:
                         logger.print(f"Retrying with batch size {batch_attempt_size}...")
-            
+
             # Force garbage collection after each batch
             torch.cuda.empty_cache()
             gc.collect()
-    
+
     pbar.close()
-    
+
     # Save detailed logs
     with open(os.path.join(checkpoint_path, "detailed_training_logs.json"), "w") as f:
         json.dump(step_logs, f, indent=2)
-    
+
     # Save validation logs to separate file
     if validation_logs:
         with open(os.path.join(checkpoint_path, "validation_logs.json"), "w") as f:
             json.dump(validation_logs, f, indent=2)
         logger.print(f"Saved {len(validation_logs)} validation evaluations to validation_logs.json")
-    
+
     return model, behavior_losses, obf_losses, loss10_behavior, loss10_obf, loss50_behavior, loss50_obf, validation_logs
 
 
 def save_validation_set(val_data: List, data_splits: Dict, concept_to_probe: Dict, checkpoint_path: str, logger):
     """Save validation set to JSON file.
-    
+
     Returns:
         validation_set_data: List of validation items with metadata
     """
     validation_set_data = []
     for i, data_item in enumerate(val_data):
         probe, prompt_text, response_text, token_ids, label, use_behavior_loss = data_item
-        
+
         # Get probe name for JSON serialization
         probe_name = "unknown"
         if concept_to_probe:
@@ -598,7 +594,7 @@ def save_validation_set(val_data: List, data_splits: Dict, concept_to_probe: Dic
                         break
                 except:
                     continue
-        
+
         # Determine detailed data type
         detailed_data_type = "unknown"
         if data_splits:
@@ -606,7 +602,7 @@ def save_validation_set(val_data: List, data_splits: Dict, concept_to_probe: Dic
                 if any(item[:3] == data_item[:3] for item in split_data):  # Compare first 3 elements
                     detailed_data_type = split_name
                     break
-        
+
         validation_item = {
             "index": i,
             "probe_name": probe_name,
@@ -618,19 +614,19 @@ def save_validation_set(val_data: List, data_splits: Dict, concept_to_probe: Dic
             "data_type": detailed_data_type
         }
         validation_set_data.append(validation_item)
-    
+
     # Save validation set
     validation_file_path = os.path.join(checkpoint_path, "validation_set.json")
     with open(validation_file_path, "w") as f:
         json.dump(validation_set_data, f, indent=2)
     logger.print(f"Saved validation set ({len(validation_set_data)} samples) to validation_set.json")
-    
+
     return validation_set_data
 
 
 def train_concept_self_obfuscation_model(
     model_name: str, # e.g."gemma_2_9b_instruct"
-    model_checkpoint: str, # e.g. "experiments/self_obfuscation_main/outputs/model_checkpoints/checkpoint_20250629_134811_synthetic_logistic_12",
+    model_checkpoint: str, # path to a model checkpoint directory, or None to start from the base model
     probe_checkpoints: str, # e.g. "20250701_002418_TRAIN_synthetic_logistic_12",
     num_samples_per_epoch: int, # Total training samples per epoch (distributed across concepts)
     num_epochs: int, # e.g. 3
@@ -681,23 +677,23 @@ def train_concept_self_obfuscation_model(
     """Train a model to perform self-obfuscation against concept probes."""
     # Set random seeds for reproducible results
     set_seeds(42)
-    
+
     if logger is None:
         logger = CSVTXTLogger(print_logs_to_console=True)
-    
+
     logger.print(f"Loading model: {model_checkpoint or model_name}")
     model = load_local_model(checkpoint_path=model_checkpoint, model_name=model_name)
-    
+
     logger.print(f"Loading concept probes from: {probe_checkpoints}")
     concept_to_probe = load_concept_probes(probe_checkpoints)
-    
+
     logger.print(f"Available concepts with probes: {list(concept_to_probe.keys())}")
 
     # Filter to only requested concepts that have probes
     if filter_to_concepts is not None and len(filter_to_concepts) > 0:
         concept_to_probe = {k: v for k, v in concept_to_probe.items() if k in filter_to_concepts}
         logger.print(f"Filtered to concepts: {list(concept_to_probe.keys())}")
-    
+
     # Exclude specified concepts from training
     if exclude_concepts is not None and len(exclude_concepts) > 0:
         original_count = len(concept_to_probe)
@@ -705,14 +701,14 @@ def train_concept_self_obfuscation_model(
         excluded_count = original_count - len(concept_to_probe)
         logger.print(f"Excluded {excluded_count} concepts: {exclude_concepts}")
         logger.print(f"Remaining concepts after exclusion: {list(concept_to_probe.keys())}")
-    
-    
+
+
     # Check if dataset_name contains "PRESET" - if so, load pre-processed training data directly
     if "PRESET" in dataset_name:
         train_data, val_data, data_type_mapping, data_splits = load_preset_data(
             dataset_name, concept_to_probe, logger
         )
-        
+
     else:
         # Normal data loading flow
         (topical_ratings, vanilla_ratings, ultrachat_ratings,
@@ -730,7 +726,7 @@ def train_concept_self_obfuscation_model(
 
         # Generate training data with new N/X/Y notation
         logger.print("Generating training data with N/X/Y notation...")
-        
+
         # Create data split distribution from individual parameters
         custom_data_split_distribution = {
             'clue_N_data_X_probe_X_topical': clue_N_data_X_probe_X_topical,
@@ -759,7 +755,7 @@ def train_concept_self_obfuscation_model(
             'clue_N_data_Y_probe_X_vanilla_rev': clue_N_data_Y_probe_X_vanilla_rev,
             'clue_N_data_Y_probe_X_ultrachat_rev': clue_N_data_Y_probe_X_ultrachat_rev,
         }
-        
+
         data_splits = process_concept_training_data(
             concept_to_topical_data=concept_to_topical_data,
             concept_to_vanilla_data=concept_to_vanilla_data,
@@ -775,7 +771,7 @@ def train_concept_self_obfuscation_model(
             data_split_distribution=custom_data_split_distribution,
             enable_topical_behavior_loss=enable_topical_behavior_loss
         )
-    
+
     # Get target layer from probe metadata
     metadata_path = os.path.join(probe_checkpoints, "metadata.json")
     target_layers = [12]  # default
@@ -783,9 +779,9 @@ def train_concept_self_obfuscation_model(
         with open(metadata_path, 'r') as f:
             metadata = json.load(f)
             target_layers = metadata.get('target_layers', [12])
-    
+
     logger.print(f"Target layers: {target_layers}")
-    
+
     # Model training details - include all arguments
     model_details = {
         "model_name": model_name,
@@ -838,18 +834,18 @@ def train_concept_self_obfuscation_model(
             "clue_N_data_Y_probe_X_ultrachat_rev": clue_N_data_Y_probe_X_ultrachat_rev,
         }
     }
-    
+
     # Set up experiment directory
     # output_dir_base is now passed as a parameter
     additional_suffix = "concepts"
-    
+
     checkpoint_path = setup_experiment_directory(
         output_dir_base=output_dir_base,
         custom_folder_name=custom_folder_name,
         experiment_type="checkpoint",
         additional_suffix=additional_suffix
     )
-    
+
     # For non-PRESET mode, prepare data for training
     if "PRESET" not in dataset_name:
         # Prepare data for training - now with data type tracking
@@ -861,7 +857,7 @@ def train_concept_self_obfuscation_model(
                 item_key = (id(item[0]), item[1][:50] if item[1] else "", item[2][:50] if item[2] else "")
                 data_type_mapping[item_key] = split_name
                 all_data.append(item)
-        
+
         # Split data into training and validation sets
         if validation_split > 0:
             val_size = int(len(all_data) * validation_split)
@@ -872,13 +868,13 @@ def train_concept_self_obfuscation_model(
             train_data = all_data
             val_data = []
             logger.print(f"No validation split - using all {len(train_data)} samples for training")
-    
+
     # Count labels in training and validation sets
     train_label_1 = sum(1 for item in train_data if item[4] == 1)
     train_label_0 = len(train_data) - train_label_1
     val_label_1 = sum(1 for item in val_data if item[4] == 1) if val_data else 0
     val_label_0 = len(val_data) - val_label_1 if val_data else 0
-    
+
     # Save validation set to JSON if it exists
     if val_data:
         validation_set_data = save_validation_set(
@@ -893,7 +889,7 @@ def train_concept_self_obfuscation_model(
     if val_data:
         logger.print(f"  Validation - Label=1 (maximize probe): {val_label_1}")
         logger.print(f"  Validation - Label=0 (minimize probe): {val_label_0}")
-    
+
     # Train model
     logger.print("Starting model training...")
     if val_data:
@@ -929,7 +925,7 @@ def train_concept_self_obfuscation_model(
     except Exception as e:
         logger.print(f"Failed to initialize wandb: {e}. Continuing without wandb logging.")
         wandb_run = None
-    
+
     trained_model, behavior_losses, obf_losses, loss10_behavior, loss10_obf, loss50_behavior, loss50_obf, validation_logs = concept_training_loop(
         model=model,
         train_data=train_data,
@@ -948,23 +944,23 @@ def train_concept_self_obfuscation_model(
         validation_metadata=validation_set_data if val_data else None,
         data_type_mapping=data_type_mapping
     )
-    
+
     # Save model checkpoint
     if save_model_checkpoint:
         logger.print(f"Saving model checkpoint to {checkpoint_path}...")
         trained_model.model.save_pretrained(checkpoint_path)
     else:
         logger.print("Not saving model checkpoint")
-    
+
     # Save training metadata with wandb info
     metadata = create_experiment_metadata(
         experiment_type="model_training",
         **model_details
     )
-    
+
     # Add the concepts that were actually trained
     metadata["trained_concepts"] = list(concept_to_probe.keys()) if concept_to_probe else []
-    
+
     # Add wandb information to metadata
     if wandb_run:
         metadata["wandb"] = {
@@ -975,35 +971,35 @@ def train_concept_self_obfuscation_model(
             "tags": wandb_run.tags
         }
         logger.print(f"Wandb run URL: {wandb_run.url}")
-    
+
     save_metadata(checkpoint_path, metadata, filename="model_training_metadata.json")
-    
+
     # Generate and save training plots
     logger.print("Generating training loss plots...")
     plot_path = os.path.join(checkpoint_path, "training_losses.png")
     plot_training_curves(behavior_losses, obf_losses, loss10_behavior, loss10_obf, loss50_behavior, loss50_obf, plot_path, validation_logs)
-    
+
     # Generate and save validation plot separately if validation data exists
     if validation_logs:
         logger.print("Generating separate validation plot...")
         validation_plot_path = os.path.join(checkpoint_path, "validation_losses.png")
         plot_validation_curves(validation_logs, validation_plot_path)
-        
+
         # Generate data type pattern plot
         logger.print("Generating validation plot by data type patterns...")
         data_type_plot_path = os.path.join(checkpoint_path, "validation_by_data_type.png")
         plot_validation_by_data_type(validation_logs, data_type_plot_path)
-        
+
         # Generate per-probe plots
         logger.print("Generating per-probe validation plots...")
         probe_plots_dir = os.path.join(checkpoint_path, "validation_by_probe")
         plot_validation_per_probe(validation_logs, probe_plots_dir)
-        
+
         # Generate plots by concept and type (clue_X_data_X_probe_X_type)
         logger.print("Generating validation plots by concept and type...")
         concept_type_plots_dir = os.path.join(checkpoint_path, "validation_by_concept_type")
         plot_validation_by_concept_and_type(validation_logs, concept_type_plots_dir)
-    
+
     # Save loss data
     loss_data = {
         'behavior_losses': behavior_losses,
@@ -1016,10 +1012,10 @@ def train_concept_self_obfuscation_model(
         'learning_rate': learning_rate,
         'behaviour_lambda': behaviour_lambda
     }
-    
+
     with open(os.path.join(checkpoint_path, "loss_data.json"), "w") as f:
         json.dump(loss_data, f, indent=2)
-    
+
     # Finish wandb run
     if wandb_run:
         # Log final metrics
@@ -1029,17 +1025,17 @@ def train_concept_self_obfuscation_model(
             "final/final_obf_loss": obf_losses[-1] if obf_losses else 0,
             "final/num_validation_evals": len(validation_logs)
         })
-        
+
         # Note: Model checkpoint artifacts are disabled to reduce wandb usage
         logger.print("Model checkpoint artifact upload disabled (to save wandb space)")
-        
+
         wandb.finish()
         logger.print("Wandb run finished")
-    
+
     torch.cuda.empty_cache()
     logger.print("Training completed successfully!")
     logger.print(f"Training logs, plots, and data saved to: {checkpoint_path}")
-    
+
     return trained_model, model_details
 
 
@@ -1086,7 +1082,7 @@ if __name__ == "__main__":
                       help='Disable synonym variations for concept clues')
     parser.add_argument('--use_antonyms', action='store_true',
                       help='Enable antonym usage for clue_X_data_Y_probe_Y types (50% chance)')
-    
+
     # Data split distribution arguments
     parser.add_argument('--clue_N_data_X_probe_X_topical', type=float, default=0.10,
                       help='Probability for clue_N_data_X_probe_X_topical split (default: 0.10)')
@@ -1116,7 +1112,7 @@ if __name__ == "__main__":
                       help='Probability for clue_X_data_Y_probe_X_vanilla split (default: 0.05)')
     parser.add_argument('--clue_X_data_Y_probe_X_ultrachat', type=float, default=0.05,
                       help='Probability for clue_X_data_Y_probe_X_ultrachat split (default: 0.05)')
-    
+
     # Dual-category data split arguments
     parser.add_argument('--clue_X_data_XY_probe_XY_topical', type=float, default=0.05,
                       help='Probability for clue_X_data_XY_probe_XY_topical split (default: 0.05)')
@@ -1130,7 +1126,7 @@ if __name__ == "__main__":
                       help='Probability for clue_X_data_XY_probe_XY_ultrachat split (default: 0.01)')
     parser.add_argument('--clue_N_data_XY_probe_XY_ultrachat', type=float, default=0.01,
                       help='Probability for clue_N_data_XY_probe_XY_ultrachat split (default: 0.01)')
-    
+
     # Reversed data type arguments
     parser.add_argument('--clue_N_data_Y_probe_X_topical_rev', type=float, default=0.0,
                       help='Probability for clue_N_data_Y_probe_X_topical_rev split (reversed labels) (default: 0.0)')
@@ -1138,7 +1134,7 @@ if __name__ == "__main__":
                       help='Probability for clue_N_data_Y_probe_X_vanilla_rev split (reversed labels) (default: 0.0)')
     parser.add_argument('--clue_N_data_Y_probe_X_ultrachat_rev', type=float, default=0.0,
                       help='Probability for clue_N_data_Y_probe_X_ultrachat_rev split (reversed labels) (default: 0.0)')
-    
+
     parser.add_argument('--output_dir_base', type=str, default="experiments/self_obfuscation_v1_rated/outputs/model_checkpoints",
                       help='Base directory for saving model outputs (default: experiments/self_obfuscation_v1_rated/outputs/model_checkpoints)')
     parser.add_argument('--skip_ultrachat_data', action='store_true',
@@ -1147,11 +1143,11 @@ if __name__ == "__main__":
                       help='Enable behavior loss for topical data (by default only ultrachat/vanilla have behavior loss)')
 
     args = parser.parse_args()
-    
+
     # Handle synonym logic
     use_synonyms = not args.no_synonyms
     use_antonyms = args.use_antonyms
-    
+
     train_concept_self_obfuscation_model(
         model_name=args.model_name,
         model_checkpoint=args.model_checkpoint,

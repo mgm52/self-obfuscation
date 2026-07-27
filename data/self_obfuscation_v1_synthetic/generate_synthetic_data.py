@@ -44,26 +44,26 @@ def print_length_statistics(texts: List[str], text_type: str = "text"):
     avg_length = sum(lengths) / len(lengths)
     print(f"\n{text_type} Statistics:")
     print(f"Average characters per {text_type.lower()}: {avg_length:.1f}")
-    
+
     # Create ASCII histogram
     if lengths:
         min_len = min(lengths)
         max_len = max(lengths)
         num_bins = min(20, len(set(lengths)))  # Max 20 bins or number of unique lengths
-        
+
         if max_len > min_len:
             bin_width = (max_len - min_len) / num_bins
             bins = [0] * num_bins
-            
+
             # Count texts in each bin
             for length in lengths:
                 bin_idx = min(int((length - min_len) / bin_width), num_bins - 1)
                 bins[bin_idx] += 1
-            
+
             print(f"\n{text_type} Length Distribution (characters):")
             max_count = max(bins)
             scale = 50 / max_count if max_count > 0 else 1  # Scale to max 50 chars width
-            
+
             for i, count in enumerate(bins):
                 bin_start = int(min_len + i * bin_width)
                 bin_end = int(min_len + (i + 1) * bin_width)
@@ -77,7 +77,7 @@ def print_length_statistics(texts: List[str], text_type: str = "text"):
 def load_transformers_model(model_name: str = "gemma_2_9b_instruct", dtype: torch.dtype = torch.bfloat16, use_static_kv=False):
     """Load model and tokenizer using transformers directly."""
     print(f"Loading model...")
-    
+
     # Check if it's a Hugging Face model identifier or local path
     if model_name == "gemma_3_27b_it_abliterated":
         model_path = "huihui-ai/gemma-3-27b-it-abliterated"
@@ -99,10 +99,10 @@ def load_transformers_model(model_name: str = "gemma_2_9b_instruct", dtype: torc
         print("Model compiled successfully.")
     else:
         print("Skipping torch compile and static KV cache for better memory management.")
-    
+
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     tokenizer.padding_side = "left"
-    
+
     # Set up pad token
     if tokenizer.pad_token:
         pass
@@ -112,9 +112,9 @@ def load_transformers_model(model_name: str = "gemma_2_9b_instruct", dtype: torc
         tokenizer.pad_token_id = tokenizer.eos_token_id
     else:
         tokenizer.add_special_tokens({"pad_token": "<|pad|>"})
-    
+
     model.generation_config.pad_token_id = tokenizer.pad_token_id
-    
+
     return model, tokenizer
 
 @compiler.disable
@@ -125,7 +125,7 @@ def optimized_generate_from_string(model, tokenizer, prompts: List[str], batch_s
     results_set = set()
     current_batch_size = batch_size
     min_batch_size = 1
-    
+
     i = 0
     reduced_at_step = -1
     while i < len(prompts):
@@ -137,7 +137,7 @@ def optimized_generate_from_string(model, tokenizer, prompts: List[str], batch_s
             print(f"Batch size increased from {min_batch_size} to {current_batch_size} at step {i}")
 
         print(f"Processing items [{i}:{i+current_batch_size}] of {len(prompts)} with batch size {current_batch_size} (at {datetime.now().strftime('%H:%M:%S')})")
-        
+
         print(f"========\nPrompts: {current_batch}\n")
 
         try:
@@ -148,22 +148,22 @@ def optimized_generate_from_string(model, tokenizer, prompts: List[str], batch_s
                     if hasattr(tokenizer, 'apply_chat_template') and tokenizer.chat_template:
                         messages = [{"role": "user", "content": prompt}]
                         formatted = tokenizer.apply_chat_template(
-                            messages, 
-                            tokenize=False, 
+                            messages,
+                            tokenize=False,
                             add_generation_prompt=True
                         )
                         formatted_prompts.append(formatted)
                     else:
                         formatted_prompts.append(prompt)
-                
+
                 # Tokenize
                 inputs = tokenizer(
-                    formatted_prompts, 
-                    return_tensors="pt", 
-                    padding=True, 
+                    formatted_prompts,
+                    return_tensors="pt",
+                    padding=True,
                     truncation=True
                 ).to(model.device)
-                
+
                 batch_results = []
 
                 # Generate
@@ -173,31 +173,31 @@ def optimized_generate_from_string(model, tokenizer, prompts: List[str], batch_s
                     pad_token_id=tokenizer.pad_token_id,
                     eos_token_id=tokenizer.eos_token_id
                 )
-                
+
                 # Decode only the new tokens (remove input)
                 input_length = inputs['input_ids'].shape[1]
                 new_tokens = outputs[:, input_length:]
-                
+
                 batch_results = tokenizer.batch_decode(
-                    new_tokens, 
+                    new_tokens,
                     skip_special_tokens=True
                 )
 
                 # Print debugging information
                 print(f"========\nGenerated outputs: {batch_results}\n========\n")
                 print("\n\n")
-                
+
                 # Force garbage collection and clear GPU cache
                 del outputs, inputs, new_tokens
                 clear_memory()
-                
+
                 if force_unique_responses:
                     for r1, p1, fp1 in zip(batch_results, current_batch, formatted_prompts):
                         if r1 in results_set:
                             inputs = tokenizer(
-                                [fp1] * batch_size, 
-                                return_tensors="pt", 
-                                padding=True, 
+                                [fp1] * batch_size,
+                                return_tensors="pt",
+                                padding=True,
                                 truncation=True
                             ).to(model.device)
 
@@ -213,12 +213,12 @@ def optimized_generate_from_string(model, tokenizer, prompts: List[str], batch_s
                             # Decode only the new tokens (remove input)
                             input_length = inputs['input_ids'].shape[1]
                             new_tokens = outputs[:, input_length:]
-                            
+
                             batch_results = tokenizer.batch_decode(
-                                new_tokens, 
+                                new_tokens,
                                 skip_special_tokens=True
                             )
-                            
+
                             # Clean up intermediate tensors
                             del outputs, new_tokens
                             clear_memory()
@@ -231,19 +231,19 @@ def optimized_generate_from_string(model, tokenizer, prompts: List[str], batch_s
                                     print(f"Found non-duplicate response! '{r1}'")
                                     break
                             regen_retries += 1
-                        
+
                         if regen_retries >= max_regen_retries:
                             print(f"ERROR: Failed to generate unique response for prompt '{p1}' after {max_regen_retries} retries. Just using duplicate response '{r1}'.")
-                        
+
                         # Once r1 is unique, add it to results!
                         results += [r1]
                         results_set.add(r1)
                 else:
                     results.extend(batch_results)
-                
+
                 # Successfully processed this batch, move to next batch
                 i += current_batch_size
-                
+
         except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
             # Check if it's an OOM error
             if "CUDA out of memory" in str(e):
@@ -251,10 +251,10 @@ def optimized_generate_from_string(model, tokenizer, prompts: List[str], batch_s
                 new_batch_size = max(current_batch_size // 2, min_batch_size)
                 reduced_at_step = i
                 print(f"CUDA out of memory. Reducing batch size from {current_batch_size} to {new_batch_size} and retrying...")
-                
+
                 # Force garbage collection and clear GPU cache
                 clear_memory()
-                
+
                 if current_batch_size <= min_batch_size:
                     print(f"ERROR: Out of memory even with minimum batch size of {min_batch_size}. Skipping prompt: {current_batch[0]}")
                     # Skip this problematic prompt and continue with the next one
@@ -265,7 +265,7 @@ def optimized_generate_from_string(model, tokenizer, prompts: List[str], batch_s
             else:
                 # If it's not an OOM error, re-raise
                 raise
-    
+
     return results
 
 def verb_to_continuous_verb(verb: str):
@@ -281,7 +281,7 @@ def title_case(word: str):
 
 def generate_topical_prompts(target_adjective: str, model, tokenizer, temperature: float = 1.0, num_prompts: int = 10, batch_size: int = 10):
     print(f"Generating {num_prompts} topical prompts...")
-    
+
     # Define word choices for prompt generation
     user_types = ["user", "clever user", "human", "person", "individual"]
     assistant_types = ["assistant", "chatbot", "AI", "person", "search engine", "LLM", "helper"]
@@ -292,13 +292,13 @@ def generate_topical_prompts(target_adjective: str, model, tokenizer, temperatur
     response_types = ["reply", "response", "answer"]
     intro_options = ["please ", ""]
     roleplay_phrases = ["as if", "pretending"]
-    
+
     meta_prompts = []
     for _ in range(num_prompts):
         # Random length guidance (serves as a guide + adds noise)
         char_count = random.randint(8, 256)
         word_count = 2 + char_count // 5
-        
+
         # Select random words for this prompt
         user_type = random.choice(user_types)
         assistant_type = random.choice(assistant_types)
@@ -326,13 +326,13 @@ def generate_topical_prompts(target_adjective: str, model, tokenizer, temperatur
             f"{intro}{try_verb} to {elicit_verb} {a_or_an(target_adjective)} {target_adjective} {response_type} from {a_or_an(assistant_type)} {assistant_type} by {verb_to_continuous_verb(write_verb)} a {char_count}-character-long {prompt_type}, {roleplay_phrase} you are {a_or_an(user_type)} {user_type}. {ending}. {ending2}.",
             f"{intro}{try_verb} to {elicit_verb} {a_or_an(target_adjective)} {target_adjective} {response_type} from {a_or_an(assistant_type)} {assistant_type} by {verb_to_continuous_verb(write_verb)} a {word_count}-word-long {prompt_type}, {roleplay_phrase} you are {a_or_an(user_type)} {user_type}. {ending}. {ending2}.",
         ]
-        
+
         template = title_case(random.choice(template_options))
         meta_prompts.append(template)
 
     # Generate responses using the model
     generated_prompts = optimized_generate_from_string(
-        model, 
+        model,
         tokenizer,
         meta_prompts,
         batch_size=batch_size,
@@ -345,7 +345,7 @@ def generate_topical_prompts(target_adjective: str, model, tokenizer, temperatur
     generated_prompts = [
         re.sub(r"Okay, here.+\n\n", "", p) for p in generated_prompts
     ]
-    
+
     return generated_prompts
 
 def generate_vanilla_responses(model, tokenizer, prompts: List[str], temperature: float = 1.0, batch_size: int = 10):
@@ -361,7 +361,7 @@ def generate_vanilla_responses(model, tokenizer, prompts: List[str], temperature
         temperature=temperature,
         do_sample=True,
     )
-    
+
     return rs
 
 def generate_topical_responses(target_adjective: str, model, tokenizer, prompts: List[str], temperature: float = 1.0, batch_size: int = 10):
@@ -379,7 +379,7 @@ def generate_topical_responses(target_adjective: str, model, tokenizer, prompts:
         f"{prompt}\n---\n{title_case(write_name)} {a_or_an(target_adjective)}{aux_adjective}{target_adjective} {response_name} to the {prompt_name} above. {ending2}."
         for prompt in prompts
     ]
-    
+
     # Use the optimized generation method with internal batching
     rs = optimized_generate_from_string(
         model,
@@ -391,7 +391,7 @@ def generate_topical_responses(target_adjective: str, model, tokenizer, prompts:
         temperature=temperature,
         do_sample=True,
     )
-    
+
     return rs
 
 def is_likely_refusal(response: str):
@@ -421,7 +421,7 @@ def save_to_json(prompts: List[str], vanilla_responses: List[str], topical_respo
     """Save generated data to a JSON file organized by adjective."""
     # Create output directory if it doesn't exist
     Path(output_dir).mkdir(parents=True, exist_ok=True)
-    
+
     # Create data entries
     data = [
         {
@@ -435,12 +435,12 @@ def save_to_json(prompts: List[str], vanilla_responses: List[str], topical_respo
         }
         for prompt, v_resp, t_resp, t_refusal, v_refusal, p_refusal in zip(prompts, vanilla_responses, topical_responses, topical_refusals, vanilla_refusals, prompt_refusals)
     ]
-    
+
     # Save to file
     output_file = Path(output_dir) / f"{adjective}.json"
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-    
+
     print(f"Saved {len(data)} entries to {output_file}")
 
 def print_memory_usage():
@@ -448,7 +448,7 @@ def print_memory_usage():
     if torch.cuda.is_available():
         print(f"GPU Memory: {torch.cuda.memory_allocated() / 1024**3:.2f}GB allocated, {torch.cuda.memory_reserved() / 1024**3:.2f}GB reserved")
         print(f"GPU Memory Summary: {torch.cuda.memory_summary(device=None, abbreviated=True)}")
-    
+
     # System memory
     process = psutil.Process()
     mem_info = process.memory_info()

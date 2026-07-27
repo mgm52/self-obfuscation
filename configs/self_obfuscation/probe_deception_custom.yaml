@@ -1,4 +1,5 @@
-model_name_or_path: "experiments/self_obfuscation_v1_rated/outputs/model_checkpoints/jul23_highlr_tripleepoch"
+# Path to an organism checkpoint produced by run_full_pipeline.py / concept_model_train_rated.py
+model_name_or_path: "path/to/your/model_checkpoint"
 
 # Probe configurations
 probes:

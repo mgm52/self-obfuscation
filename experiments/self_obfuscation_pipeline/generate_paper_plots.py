@@ -5,8 +5,7 @@ import argparse
 import datetime
 import json
 import logging
-import sys
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Literal
 
@@ -15,10 +14,13 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from experiments.self_obfuscation_deception.cosine_similarity_analysis import (
-    is_deception_related, is_harmful_related, is_safe_related, is_truth_related,
-    generate_plot_filename, plot_similarity_vs_metric, load_raw_data,
-    prepare_similarity_plot_data, draw_similarity_axis
+from experiments.shared_utils.cosine_similarity_analysis import (
+    is_deception_related,
+    is_harmful_related,
+    plot_similarity_vs_metric,
+    load_raw_data,
+    prepare_similarity_plot_data,
+    draw_similarity_axis,
 )
 
 
@@ -164,7 +166,7 @@ def load_metric_results(
     spec = {
         "tpr": {
             "value_dynamic": lambda cols: (
-                [c for c in cols if (("tpr" in c.lower() or "recall" in c.lower()) and 
+                [c for c in cols if (("tpr" in c.lower() or "recall" in c.lower()) and
                  (f"@{fpr_threshold}fpr" in c.lower()))]
             ),
             "value_candidates": {
@@ -175,11 +177,11 @@ def load_metric_results(
                 5: ['recall@5fpr_mean', 'tpr_at_5%_fpr', 'tpr_at_5pct_fpr', 'tpr_5pct_fpr',
                     'tpr@5%fpr', 'recall@5fpr', 'tpr_at_5_fpr'],
             },
-            "ci_lower": {0.01: ['recall@0.01fpr_ci_low', 'tpr_ci_lower'], 
-                          1: ['recall@1fpr_ci_low', 'tpr_ci_lower'], 
+            "ci_lower": {0.01: ['recall@0.01fpr_ci_low', 'tpr_ci_lower'],
+                          1: ['recall@1fpr_ci_low', 'tpr_ci_lower'],
                           5: ['recall@5fpr_ci_low', 'tpr_ci_lower']},
-            "ci_upper": {0.01: ['recall@0.01fpr_ci_high', 'tpr_ci_upper'], 
-                          1: ['recall@1fpr_ci_high', 'tpr_ci_upper'], 
+            "ci_upper": {0.01: ['recall@0.01fpr_ci_high', 'tpr_ci_upper'],
+                          1: ['recall@1fpr_ci_high', 'tpr_ci_upper'],
                           5: ['recall@5fpr_ci_high', 'tpr_ci_upper']},
             # "fallback_ci_lower": ['tpr_ci_lower'],  # FALLBACK REMOVED
             # "fallback_ci_upper": ['tpr_ci_upper'],  # FALLBACK REMOVED
@@ -234,14 +236,14 @@ def load_metric_results(
         if metric == "tpr":
             ci_low_candidates = s["ci_lower"].get(fpr_threshold, [])
             ci_high_candidates = s["ci_upper"].get(fpr_threshold, [])
-            
+
             # Try each CI candidate in order until we find one that exists
             ci_lower = None
             for ci_col in ci_low_candidates:
                 if row.get(ci_col) is not None:
                     ci_lower = row.get(ci_col)
                     break
-                    
+
             ci_upper = None
             for ci_col in ci_high_candidates:
                 if row.get(ci_col) is not None:
@@ -571,7 +573,7 @@ def load_likelihoods_for_conditions(processed_results: List[ProcessedResult],
     #     except (FileNotFoundError, json.JSONDecodeError) as e:
     #         logging.warning(f"Could not load likelihood file {path}: {e}")
     #         return None
-    
+
     def load_json_strict(path: Optional[str]):
         if not path:
             raise Exception(f"Path is None")
@@ -709,10 +711,10 @@ def create_plot_with_config(results_configs, output_folder=None,
     for path, name, desc in results_configs:
         logging.info(f"Loading {desc} results for {fpr_threshold}% FPR...")
         all_results_fpr.update(load_metric_results(path, name, metric="tpr", fpr_threshold=fpr_threshold))
-    
+
     # Compute processed_results for the specific FPR threshold
     processed_results = find_lowest_metric_conditions(all_results_fpr, metric="tpr")
-    
+
     apply_paper_style()
     fig, ax = plt.subplots(figsize=(5.5, 4))
 
@@ -1327,7 +1329,7 @@ def main():
 
     def do_cosine_ensemble(metric_type="recall"):
         logging.info(f"Generating ensemble cosine similarity plots ({metric_type})...")
-        
+
         # Type 1: Normal ensemble (original behavior)
         ensemble_pickles = [args.harmful_cosine, args.obfact_cosine, args.deception_cosine, args.apollorepe_cosine]
         # FALLBACK REMOVED - let exceptions be thrown if files are missing
@@ -1335,7 +1337,7 @@ def main():
         # if all_exist:
         logging.info(f"Generating normal ensemble plot ({metric_type})...")
         create_ensemble_cosine_plot(ensemble_pickles, args.output_folder, metric_type=metric_type, suffix="normal")
-        
+
         # Type 2: Using -deception-ref and -harmful-ref versions
         # NOTE: These files have colons in filenames (e.g. "(ref:_deception).pkl") which are
         # incompatible with Windows. They are optional supplementary plots.

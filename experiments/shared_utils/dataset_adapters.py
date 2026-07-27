@@ -34,11 +34,13 @@ class DatasetAdapter:
         self.kwargs = kwargs
 
     @abstractmethod
-    def load_and_extract_examples(self) -> List[Tuple[str, str]]:
+    def load_and_extract_examples(self, dataset_name: str) -> List[Tuple[str, str]]:
         pass
 
     @abstractmethod
-    def extract_examples(self, dataset: Any, dataset_name: str) -> List[Tuple[str, str]]:
+    def extract_examples(
+        self, dataset: Any, dataset_name: str
+    ) -> List[Tuple[str, str]]:
         pass
 
 
@@ -51,7 +53,7 @@ class Gemma2JailbreaksAdapter(DatasetAdapter):
         self.subset_name = subset_name
         self._cached_dataset = None
 
-    def load_and_extract_examples(self) -> List[Tuple[str, str]]:
+    def load_and_extract_examples(self, dataset_name: str) -> List[Tuple[str, str]]:
         """Load the full jailbreaks dataset once and extract from the specified subset."""
         # Load the full dataset only once
         if self._cached_dataset is None:
@@ -60,13 +62,15 @@ class Gemma2JailbreaksAdapter(DatasetAdapter):
         # Extract from the specific subset
         if self.subset_name in self._cached_dataset:
             dataset_subset = self._cached_dataset[self.subset_name]
-            return self.extract_examples(dataset_subset)
+            return self.extract_examples(dataset_subset, dataset_name)
         else:
             raise ValueError(
                 f"Subset '{self.subset_name}' not found in jailbreaks dataset. Available subsets: {list(self._cached_dataset.keys())}"
             )
 
-    def extract_examples(self, dataset: Any) -> List[Tuple[str, str]]:
+    def extract_examples(
+        self, dataset: Any, dataset_name: str
+    ) -> List[Tuple[str, str]]:
         """Extract examples using the default prompt/completion format."""
         examples = []
         for item in dataset:
@@ -90,17 +94,17 @@ class DolusDatasetAdapter(DatasetAdapter):
         """Lazy load the dataset and split it into train/test."""
         if self._cached_dataset is None:
             self._cached_dataset = load_dataset(self.dataset_source)
-            
+
             dataset_subset = self._cached_dataset["train"]
             train_subset_size = int(len(dataset_subset) * 0.8)
             shuffled_dataset = dataset_subset.shuffle(seed=42)
             self.train_dataset = shuffled_dataset.select(range(train_subset_size))
             self.test_dataset = shuffled_dataset.select(range(train_subset_size, len(dataset_subset)))
 
-    def load_and_extract_examples(self) -> List[Tuple[str, str]]:
+    def load_and_extract_examples(self, dataset_name: str) -> List[Tuple[str, str]]:
         """Load the full Dolus dataset once and extract from the specified subset."""
         self._ensure_dataset_loaded()
-        
+
         match self.label:
             case "deceptive_train":
                 return self.extract_examples(self.train_dataset, deceptive=True)
@@ -151,7 +155,13 @@ class DolusDatasetAdapter(DatasetAdapter):
 
 
 class WildJailbreakAdapter(DatasetAdapter):
-    """Adapter for the Wild Jailbreak dataset from local CSV file."""
+    """Adapter for the Wild Jailbreak dataset from local CSV file.
+
+    NOTE: The CSV this adapter points at (datasets/harmfulness/wildjailbreak_train.csv)
+    is not distributed with this repository because WildJailbreak is a gated dataset.
+    To use this adapter, download allenai/wildjailbreak from HuggingFace and place the
+    train CSV at that path.
+    """
 
     def __init__(self, data_type: str):
         """
@@ -172,7 +182,7 @@ class WildJailbreakAdapter(DatasetAdapter):
         self.data_type = data_type
         self._cached_dataset = None
 
-    def load_and_extract_examples(self) -> List[Tuple[str, str]]:
+    def load_and_extract_examples(self, dataset_name: str) -> List[Tuple[str, str]]:
         """Load the wildjailbreak CSV dataset and extract examples based on data_type."""
         # Load the CSV file only once
         if self._cached_dataset is None:
@@ -181,9 +191,11 @@ class WildJailbreakAdapter(DatasetAdapter):
             self._cached_dataset = pd.read_csv(self.dataset_source)
 
         # Filter by data_type and extract examples
-        return self.extract_examples(self._cached_dataset)
+        return self.extract_examples(self._cached_dataset, dataset_name)
 
-    def extract_examples(self, dataset: Any) -> List[Tuple[str, str]]:
+    def extract_examples(
+        self, dataset: Any, dataset_name: str
+    ) -> List[Tuple[str, str]]:
         """Extract examples filtering by data_type (adversarial_benign or adversarial_harmful)."""
         examples = []
 
@@ -201,11 +213,11 @@ class WildJailbreakAdapter(DatasetAdapter):
 
 class RepEHonestyAdapter(DatasetAdapter):
     """Adapter for RepE Honest/Dishonest Facts dataset using RepeHonestDishonestFacts class."""
-    
+
     def __init__(self, split: str, label: int):
         """
         Initialize with split and label.
-        
+
         Args:
             split: "train" or "test"
             label: 0 for truthful, 1 for deceptive
@@ -218,54 +230,56 @@ class RepEHonestyAdapter(DatasetAdapter):
         self.test_dialogues = None
         self.train_labels = None
         self.test_labels = None
-    
+
     def _ensure_dataset_loaded(self):
         """Lazy load the dataset using RepeHonestDishonestFacts and split it into train/test."""
         if self._cached_dataset is None:
             # Create instance of RepeHonestDishonestFacts with default variant
             self._cached_dataset = RepeHonestDishonestFacts(variant="you_are_fact_sys") # default variant
-            
+
             # Get all dialogues and labels
             all_dialogues = self._cached_dataset.dialogues
             all_labels = self._cached_dataset.labels
-            
+
             # Create 80/20 train/test split
             total_size = len(all_dialogues)
             train_size = int(total_size * 0.8)
-            
+
             # Split the data
             self.train_dialogues = all_dialogues[:train_size]
             self.test_dialogues = all_dialogues[train_size:]
             self.train_labels = all_labels[:train_size]
             self.test_labels = all_labels[train_size:]
-    
-    def load_and_extract_examples(self) -> List[Tuple[str, str]]:
+
+    def load_and_extract_examples(self, dataset_name: str) -> List[Tuple[str, str]]:
         """Load dataset and extract examples based on split and label."""
         self._ensure_dataset_loaded()
-        
+
         if self.split == "train":
             dialogues = self.train_dialogues
             labels = self.train_labels
         else:
             dialogues = self.test_dialogues
             labels = self.test_labels
-        
-        return self.extract_examples((dialogues, labels))
-    
-    def extract_examples(self, dataset: Any) -> List[Tuple[str, str]]:
+
+        return self.extract_examples((dialogues, labels), dataset_name)
+
+    def extract_examples(
+        self, dataset: Any, dataset_name: str
+    ) -> List[Tuple[str, str]]:
         """Extract examples filtering by label (0=truthful/honest, 1=deceptive)."""
         dialogues, labels = dataset
         examples = []
-        
+
         # Map our label (0/1) to Label enum
         target_label = Label.HONEST if self.label == 0 else Label.DECEPTIVE
-        
+
         for dialogue, label in zip(dialogues, labels):
             if label == target_label:
                 # Build the prompt from the dialogue messages
                 prompt_parts = []
                 completion = ""
-                
+
                 for message in dialogue:
                     if message.role == "system":
                         # Include system message as part of prompt
@@ -276,15 +290,15 @@ class RepEHonestyAdapter(DatasetAdapter):
                     elif message.role == "assistant":
                         # The assistant messages form the completion
                         completion += message.content
-                
+
                 # Join prompt parts
                 prompt = "\n".join(prompt_parts) if prompt_parts else ""
-                
+
                 if not completion:
                     raise Exception(f"No completion present for prompt {prompt}")
-                
+
                 examples.append((prompt, completion))
-        
+
         return examples
 
 

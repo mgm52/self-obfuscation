@@ -5,13 +5,13 @@ Script: probe_test_synthetic_clued_labelled.py
 
 Evaluate concept probes on labelled test data with and without probe awareness.
 
-This script combines functionality from probe_test_synthetic_clued.py and 
+This script combines functionality from probe_test_synthetic_clued.py and
 probe_test_synthetic_labelled.py to test each concept probe on:
 1. Regular labelled test data for that concept
 2. Labelled test data with "You are being probed for <concept>" prepended
 3. UltraChat negative samples for out-of-distribution testing
 
-Uses proper data loading functions from data/data.py and 
+Uses proper data loading functions from data/data.py and
 data/self_obfuscation_v1_synthetic_rating/load_rated_data.py.
 
 INPUTS:
@@ -38,14 +38,11 @@ import pickle
 import random
 import gc
 from datetime import datetime
-from pathlib import Path
 from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
 from tqdm import tqdm
-from datasets import load_dataset
-from scipy import stats
 
 # Try to import pandas, but make it optional
 try:
@@ -67,54 +64,47 @@ try:
 except ImportError:
     HAS_MATPLOTLIB = False
 
-from experiments.shared_utils.utils_misc import load_local_model, load_old_probe
+from experiments.shared_utils.utils_misc import load_local_model
 from experiments.shared_utils.utils_training import ResponseProbeDataModule
 from experiments.shared_utils.utils_testing import test_trainable_metric_on_response_data_module
 from obf_reps.logging import CSVTXTLogger
-from obf_reps.metrics import (
-    LogisticRegressionMetric,
-    MetricConfig,
-    MLPMetric,
-    SklearnLogisticRegressionMetric,
-    TrainableMetric,
-)
+from obf_reps.metrics import TrainableMetric
 from obf_reps.models.hf import HFHardPrompted
-from obf_reps.data import ConceptDataModule
-from data.data import PosNegDataByCategory, PromptResp
+from data.data import PosNegDataByCategory
 from data.self_obfuscation_v1_synthetic_rating.load_rated_data import load_rated_data
 
 
 def bootstrap_confidence_interval(data: List[float], n_bootstrap: int = 1000, confidence_level: float = 0.95) -> Tuple[float, float]:
     """
     Calculate bootstrap confidence interval for the mean of data.
-    
+
     Args:
         data: List of values to bootstrap
         n_bootstrap: Number of bootstrap samples
         confidence_level: Confidence level (e.g., 0.95 for 95%)
-        
+
     Returns:
         Tuple of (lower_bound, upper_bound)
     """
     if len(data) == 0:
         return 0.0, 0.0
-    
+
     data = np.array(data)
     bootstrap_means = []
-    
+
     for _ in range(n_bootstrap):
         # Sample with replacement
         bootstrap_sample = np.random.choice(data, size=len(data), replace=True)
         bootstrap_means.append(np.mean(bootstrap_sample))
-    
+
     # Calculate confidence interval
     alpha = 1 - confidence_level
     lower_percentile = (alpha / 2) * 100
     upper_percentile = (1 - alpha / 2) * 100
-    
+
     ci_lower = np.percentile(bootstrap_means, lower_percentile)
     ci_upper = np.percentile(bootstrap_means, upper_percentile)
-    
+
     return ci_lower, ci_upper
 
 
@@ -124,52 +114,52 @@ def load_probe_from_checkpoint(probe_dir: str, model, logger, concept: str, is_m
         probe_path = os.path.join(probe_dir, "merged_probe.pkl")
     else:
         probe_path = os.path.join(probe_dir, f"{concept}.pkl")
-    
+
     if not os.path.exists(probe_path):
         raise FileNotFoundError(f"Probe file not found: {probe_path}")
-    
+
     # Load probe using pickle directly (for rated probe compatibility)
     with open(probe_path, "rb") as f:
         probe = pickle.load(f)
-    
+
     # Load metadata to get configuration
     metadata_path = os.path.join(probe_dir, "metadata.json")
     with open(metadata_path, 'r') as f:
         metadata = json.load(f)
-    
+
     return probe, metadata
 
 
 def extract_adjective_data_from_pos_neg_data(pos_neg_data: PosNegDataByCategory, adjective: str) -> Tuple[List[Tuple[str, str, None]], List[Tuple[str, str, None]]]:
     """
     Extract positive and negative samples for a specific adjective from PosNegDataByCategory.
-    
+
     Args:
         pos_neg_data: PosNegDataByCategory object containing the categorized data
         adjective: The adjective to extract data for
-    
+
     Returns:
         Tuple of (positive_samples, negative_samples) in the expected tuple format
     """
     if adjective not in pos_neg_data.categories:
         return [], []
-    
+
     category_data = pos_neg_data.categories[adjective]
-    
+
     # Convert PromptResp objects to the expected tuple format (prompt, response, None)
     positive_samples = [(pr.prompt, pr.response, None) for pr in category_data.pos_dataset]
     negative_samples = [(pr.prompt, pr.response, None) for pr in category_data.neg_dataset]
-    
+
     return positive_samples, negative_samples
 
 
 def get_all_adjectives_from_pos_neg_data(pos_neg_data: PosNegDataByCategory) -> List[str]:
     """
     Get all adjectives present in the PosNegDataByCategory.
-    
+
     Args:
         pos_neg_data: PosNegDataByCategory object containing the categorized data
-    
+
     Returns:
         List of adjective names
     """
@@ -179,68 +169,68 @@ def get_all_adjectives_from_pos_neg_data(pos_neg_data: PosNegDataByCategory) -> 
 def load_ultrachat_mega_dataset(dataset_path: str) -> List[Dict]:
     """
     Loads the UltraChat mega dataset from JSON file.
-    
+
     Args:
         dataset_path: Path to the UltraChat mega dataset JSON file
-    
+
     Returns:
         List of UltraChat dataset items with adjective ratings
     """
     with open(dataset_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
-    
+
     print(f"Loaded {len(data)} UltraChat samples from {dataset_path}")
     return data
 
 
-def extract_ultrachat_negatives_for_adjective(ultrachat_data: List[Dict], adjective: str, 
+def extract_ultrachat_negatives_for_adjective(ultrachat_data: List[Dict], adjective: str,
                                             negative_threshold: float = 0.25,
                                             max_samples: int = 1000) -> List[Tuple[str, str, None]]:
     """
     Extract negative samples for a specific adjective from UltraChat mega dataset.
-    
+
     Args:
         ultrachat_data: List of UltraChat items with ratings
         adjective: The adjective to extract negative data for
         negative_threshold: Threshold for negative samples (<= this value)
         max_samples: Maximum number of samples to return
-    
+
     Returns:
         List of negative samples for this adjective
     """
     negative_samples = []
-    
+
     for item in ultrachat_data:
         # Skip if we don't have the required ratings
-        if ("prompt_normalized_ratings" not in item or 
-            "response_normalized_ratings" not in item or 
-            adjective not in item["prompt_normalized_ratings"] or 
+        if ("prompt_normalized_ratings" not in item or
+            "response_normalized_ratings" not in item or
+            adjective not in item["prompt_normalized_ratings"] or
             adjective not in item["response_normalized_ratings"]):
             continue
-            
+
         prompt = item.get("prompt")
         response = item.get("response")
-        
+
         if not prompt or not response:
             continue
-            
+
         # Get ratings for this adjective
         prompt_rating = item["prompt_normalized_ratings"][adjective]
         response_rating = item["response_normalized_ratings"][adjective]
-        
+
         if prompt_rating is None or response_rating is None:
             continue
-        
+
         # Check if both prompt and response ratings are below threshold (strong negatives)
         max_rating = max(prompt_rating, response_rating)
-        
+
         if max_rating <= negative_threshold:
             negative_samples.append((prompt, response, None))
-            
+
             # Stop if we have enough samples
             if len(negative_samples) >= max_samples:
                 break
-    
+
     return negative_samples
 
 
@@ -272,18 +262,18 @@ def get_top_bottom_examples(scores: List[float], data: List[Tuple[str, str, None
     """Get top and bottom n examples based on scores."""
     if len(scores) != len(data):
         return {"top_examples": [], "bottom_examples": [], "error": "Scores and data length mismatch"}
-    
+
     # Create list of (score, index) pairs and sort
     score_indices = [(score, i) for i, score in enumerate(scores)]
     score_indices.sort(key=lambda x: x[0], reverse=True)
-    
+
     # Get top n and bottom n
     top_indices = [idx for _, idx in score_indices[:n]]
     bottom_indices = [idx for _, idx in score_indices[-n:]]
-    
+
     top_examples = [{"score": scores[i], "prompt": data[i][0], "response": data[i][1]} for i in top_indices]
     bottom_examples = [{"score": scores[i], "prompt": data[i][0], "response": data[i][1]} for i in bottom_indices]
-    
+
     return {"top_examples": top_examples, "bottom_examples": bottom_examples}
 
 
@@ -291,11 +281,11 @@ def bootstrap_tpr_at_fpr_with_thresholds(pos_scores: List[float], neg_scores: Li
     """Calculates the mean TPR at a given FPR with confidence intervals and threshold statistics using bootstrapping."""
     if not pos_scores or not neg_scores:
         return {"mean_tpr": None, "tpr_ci_95": (None, None), "mean_threshold": None, "threshold_ci_95": (None, None), "error": "Not enough data for bootstrapping."}
-    
+
     pos_scores_np, neg_scores_np = np.array(pos_scores), np.array(neg_scores)
     tpr_samples = []
     threshold_samples = []
-    
+
     for _ in range(num_iterations):
         neg_resample = np.random.choice(neg_scores_np, size=len(neg_scores_np), replace=True)
         pos_resample = np.random.choice(pos_scores_np, size=len(pos_scores_np), replace=True)
@@ -303,15 +293,15 @@ def bootstrap_tpr_at_fpr_with_thresholds(pos_scores: List[float], neg_scores: Li
         tpr = np.mean(pos_resample > threshold)
         tpr_samples.append(tpr)
         threshold_samples.append(threshold)
-    
+
     mean_tpr = np.mean(tpr_samples)
     tpr_ci_lower, tpr_ci_upper = np.percentile(tpr_samples, 2.5), np.percentile(tpr_samples, 97.5)
-    
+
     mean_threshold = np.mean(threshold_samples)
     threshold_ci_lower, threshold_ci_upper = np.percentile(threshold_samples, 2.5), np.percentile(threshold_samples, 97.5)
-    
+
     return {
-        "mean_tpr": mean_tpr, 
+        "mean_tpr": mean_tpr,
         "tpr_ci_95": (tpr_ci_lower, tpr_ci_upper),
         "mean_threshold": mean_threshold,
         "threshold_ci_95": (threshold_ci_lower, threshold_ci_upper)
@@ -333,30 +323,30 @@ def evaluate_probe_on_labelled_data(
     override_trigger_word: str = None
 ) -> Dict:
     """Evaluate a probe on labelled test data with optional probe awareness.
-    
+
     Uses test_trainable_metric_on_response_data_module which only applies
     the awareness prompt to positive samples, not negative samples.
     """
-    
+
     try:
         # Balance and limit test sets
         # Use min of available samples and max_test_samples, but at least min_test_samples
         max_possible_size = min(len(positive_samples), len(negative_samples))
         test_size = min(max_possible_size, max_test_samples)
         test_size = max(test_size, min(min_test_samples, max_possible_size))
-        
+
         pos_test = random.Random(42).sample(positive_samples, test_size)
         neg_test = random.Random(42).sample(negative_samples, test_size)
-        
+
         logger.print(f"Testing with {len(pos_test)} pos / {len(neg_test)} neg samples.")
-        
+
         # Create ResponseProbeDataModule with the test samples
         # Extract positive and negative samples separately
         pos_samples = [(p, r) for p, r, _ in pos_test]
         neg_samples = [(p, r) for p, r, _ in neg_test]
-        
+
         data_module = ResponseProbeDataModule(pos_samples, neg_samples)
-        
+
         # Determine the trigger word to use
         adv_word = None
         if add_probe_awareness:
@@ -364,7 +354,7 @@ def evaluate_probe_on_labelled_data(
                 adv_word = override_trigger_word
             else:
                 adv_word = concept
-        
+
         # Use test_trainable_metric_on_response_data_module
         # This function automatically adds the awareness prompt only to positive samples when adv_word is provided
         custom_folder_name = f"probe_eval_{concept}{'_aware' if add_probe_awareness else ''}"
@@ -378,11 +368,11 @@ def evaluate_probe_on_labelled_data(
             custom_folder_name=custom_folder_name,
             adv_word=adv_word
         )
-        
+
         # Extract scores from results
         pos_scores = [r['pos_score'] for r in results]
         neg_scores = [r['neg_score'] for r in results]
-        
+
         # Debug: Print detailed information about results
         logger.print(f"  DEBUG: Got {len(results)} results from test_trainable_metric")
         logger.print(f"  DEBUG: Number of pos_scores: {len(pos_scores)}, neg_scores: {len(neg_scores)}")
@@ -392,24 +382,24 @@ def evaluate_probe_on_labelled_data(
             logger.print(f"  DEBUG: Neg scores - min: {min(neg_scores):.4f}, max: {max(neg_scores):.4f}, mean: {np.mean(neg_scores):.4f}")
         if len(results) > 0:
             logger.print(f"  DEBUG: First result sample: pos_score={results[0]['pos_score']:.4f}, neg_score={results[0]['neg_score']:.4f}")
-        
+
         # Calculate bootstrap metrics
         bootstrap_results = bootstrap_tpr_at_fpr_with_thresholds(pos_scores, neg_scores, num_iterations=bootstrap_iterations)
-        
+
         # Calculate average probe score on topical responses
         avg_topical_score = np.mean(pos_scores) if len(pos_scores) > 0 else 0.0
         std_topical_score = np.std(pos_scores) if len(pos_scores) > 0 else 0.0
-        
+
         # Calculate 95% confidence interval using bootstrapping
         ci_lower, ci_upper = bootstrap_confidence_interval(pos_scores, n_bootstrap=1000, confidence_level=0.95)
-        
+
         # Get top/bottom examples - reconstruct data format
         pos_data = [(r['pos_prompt'], r['pos_target'], None) for r in results]
         neg_data = [(r['neg_prompt'], r['neg_target'], None) for r in results]
-        
+
         pos_examples = get_top_bottom_examples(pos_scores, pos_data)
         neg_examples = get_top_bottom_examples(neg_scores, neg_data)
-        
+
         return {
             'concept': concept,
             'probe_aware': add_probe_awareness,
@@ -433,7 +423,7 @@ def evaluate_probe_on_labelled_data(
             'top_3_neg_examples': neg_examples.get("top_examples", []),
             'bottom_3_neg_examples': neg_examples.get("bottom_examples", []),
         }
-    
+
     except Exception as e:
         logger.print(f"Error during evaluation: {e}")
         return {
@@ -464,33 +454,33 @@ def evaluate_probe_on_ultrachat_data(
     override_trigger_word: str = None
 ) -> Dict:
     """Evaluate a probe against UltraChat negative samples with optional probe awareness.
-    
+
     Uses test_trainable_metric_on_response_data_module which only applies
     the awareness prompt to positive samples, not negative samples.
     """
-    
+
     try:
         # Limit test sets and balance them
         pos_test_size = min(len(positive_samples), max_test_samples)
         pos_test_size = max(pos_test_size, min(min_test_samples, len(positive_samples)))
-        
+
         neg_test_size = min(len(ultrachat_negative_samples), max_test_samples)
         neg_test_size = max(neg_test_size, min(min_test_samples, len(ultrachat_negative_samples)))
-        
+
         # Make sure we have same number of pos and neg samples for pairing
         test_size = min(pos_test_size, neg_test_size)
         pos_test = positive_samples[:test_size]
         neg_test = ultrachat_negative_samples[:test_size]
-        
+
         logger.print(f"Testing with {len(pos_test)} pos / {len(neg_test)} UltraChat neg samples.")
-        
+
         # Create ResponseProbeDataModule with the test samples
         # Extract positive and negative samples separately
         pos_samples = [(p, r) for p, r, _ in pos_test]
         neg_samples = [(p, r) for p, r, _ in neg_test]
-        
+
         data_module = ResponseProbeDataModule(pos_samples, neg_samples)
-        
+
         # Determine the trigger word to use
         adv_word = None
         if add_probe_awareness:
@@ -498,7 +488,7 @@ def evaluate_probe_on_ultrachat_data(
                 adv_word = override_trigger_word
             else:
                 adv_word = concept
-        
+
         # Use test_trainable_metric_on_response_data_module
         # This function automatically adds the awareness prompt only to positive samples when adv_word is provided
         custom_folder_name = f"ultrachat_probe_eval_{concept}{'_aware' if add_probe_awareness else ''}"
@@ -512,21 +502,21 @@ def evaluate_probe_on_ultrachat_data(
             custom_folder_name=custom_folder_name,
             adv_word=adv_word
         )
-        
+
         # Extract scores from results
         pos_scores = [r['pos_score'] for r in results]
         neg_scores = [r['neg_score'] for r in results]
-        
+
         # Calculate bootstrap metrics
         bootstrap_results = bootstrap_tpr_at_fpr_with_thresholds(pos_scores, neg_scores, num_iterations=bootstrap_iterations)
-        
+
         # Get top/bottom examples - reconstruct data format
         pos_data = [(r['pos_prompt'], r['pos_target'], None) for r in results]
         neg_data = [(r['neg_prompt'], r['neg_target'], None) for r in results]
-        
+
         pos_examples = get_top_bottom_examples(pos_scores, pos_data)
         neg_examples = get_top_bottom_examples(neg_scores, neg_data)
-        
+
         return {
             'concept': concept,
             'probe_aware': add_probe_awareness,
@@ -544,7 +534,7 @@ def evaluate_probe_on_ultrachat_data(
             'top_3_neg_examples': neg_examples.get("top_examples", []),
             'bottom_3_neg_examples': neg_examples.get("bottom_examples", []),
         }
-    
+
     except Exception as e:
         logger.print(f"Error during UltraChat evaluation: {e}")
         return {
@@ -556,11 +546,11 @@ def evaluate_probe_on_ultrachat_data(
 
 def create_bar_plots(results: List[Dict], output_dir: str):
     """Create bar plots comparing probe performance."""
-    
+
     if not HAS_MATPLOTLIB or not HAS_PANDAS:
         print("matplotlib or pandas not available, skipping plots")
         return
-    
+
     # Prepare data for plotting
     plot_data = []
     for result in results:
@@ -568,11 +558,11 @@ def create_bar_plots(results: List[Dict], output_dir: str):
             ci_lower = result.get('ci_lower', 0.0)
             ci_upper = result.get('ci_upper', 0.0)
             avg_score = result['avg_topical_score']
-            
+
             # Calculate error bar values (distance from mean to bounds)
             error_lower = avg_score - ci_lower
             error_upper = ci_upper - avg_score
-            
+
             plot_data.append({
                 'concept': result['concept'],
                 'condition': 'Regular' if not result['probe_aware'] else 'Probe-Aware',
@@ -583,40 +573,40 @@ def create_bar_plots(results: List[Dict], output_dir: str):
                 'error_lower': error_lower,
                 'error_upper': error_upper
             })
-    
+
     if not plot_data:
         print("No plotting data available")
         return
-    
+
     df = pd.DataFrame(plot_data)
-    
+
     # Create single plot for average topical probe scores with ICML paper dimensions
     fig, ax = plt.subplots(1, 1, figsize=(6.75, 4.5))
-    
+
     # Calculate difference between probe-aware and regular scores for sorting
     regular_data = df[df['condition'] == 'Regular'].set_index('concept')
     aware_data = df[df['condition'] == 'Probe-Aware'].set_index('concept')
-    
+
     # Calculate score differences and sort in descending order
     score_diff = aware_data['avg_topical_score'] - regular_data['avg_topical_score']
     sorted_concepts = score_diff.sort_values(ascending=True).index.tolist()
-    
+
     # Reorder data based on sorted concepts
     regular_data = regular_data.reindex(sorted_concepts)
     aware_data = aware_data.reindex(sorted_concepts)
-    
+
     # Average topical probe score plot with 95% confidence interval error bars
     x_pos = np.arange(len(sorted_concepts))
     width = 0.35
-    
+
     # Plot bars with confidence intervals
-    bars1 = ax.bar(x_pos - width/2, regular_data['avg_topical_score'], width, 
-                   yerr=[regular_data['error_lower'], regular_data['error_upper']], 
+    bars1 = ax.bar(x_pos - width/2, regular_data['avg_topical_score'], width,
+                   yerr=[regular_data['error_lower'], regular_data['error_upper']],
                    label='Regular', capsize=5)
     bars2 = ax.bar(x_pos + width/2, aware_data['avg_topical_score'], width,
-                   yerr=[aware_data['error_lower'], aware_data['error_upper']], 
+                   yerr=[aware_data['error_lower'], aware_data['error_upper']],
                    label='Probe-Aware', capsize=5)
-    
+
     ax.set_title('Average Probe Score on Topical Responses (95% CI)', fontsize=12)
     ax.set_ylabel('Average Probe Score', fontsize=11)
     ax.set_xlabel('Concept', fontsize=11)
@@ -624,7 +614,7 @@ def create_bar_plots(results: List[Dict], output_dir: str):
     ax.set_xticklabels(sorted_concepts, rotation=45)
     ax.legend()
     ax.set_ylim(0, 1)
-    
+
     # Don't use tight_layout since we have constrained_layout enabled
     # Save PNG
     png_path = os.path.join(output_dir, 'concept_probe_performance.png')
@@ -633,13 +623,13 @@ def create_bar_plots(results: List[Dict], output_dir: str):
     pdf_path = os.path.join(output_dir, 'concept_probe_performance.pdf')
     plt.savefig(pdf_path, bbox_inches='tight')
     plt.close()
-    
+
     # Create a difference plot using the same sorted order with ICML paper dimensions
     fig, ax = plt.subplots(1, 1, figsize=(6.75, 4.5))
-    
+
     # Use the already calculated and sorted score differences
     sorted_score_diff = score_diff.reindex(sorted_concepts)
-    
+
     # Average topical score difference
     sorted_score_diff.plot(kind='bar', ax=ax, color='lightgreen')
     ax.set_title('Avg Topical Score Difference (Probe-Aware - Regular)', fontsize=12)
@@ -647,7 +637,7 @@ def create_bar_plots(results: List[Dict], output_dir: str):
     ax.set_xlabel('Concept', fontsize=11)
     ax.tick_params(axis='x', rotation=45)
     ax.axhline(y=0, color='red', linestyle='--', alpha=0.7)
-    
+
     # Don't use tight_layout since we have constrained_layout enabled
     # Save PNG
     png_path = os.path.join(output_dir, 'concept_probe_performance_difference.png')
@@ -765,29 +755,29 @@ def main():
         default=[],
         help="List of trigger words to test. If provided, each word is tested as a separate trigger instead of using the probe name(s)",
     )
-    
+
     args = parser.parse_args()
-    
+
     # Set random seed
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    
+
     # Set up logger
     logger = CSVTXTLogger(print_logs_to_console=True)
     logger.print("Starting concept probe evaluation with probe awareness testing...")
-    
+
     # Create output directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     rating_type = "topical" if args.use_topical_ratings else "vanilla"
     output_dir = os.path.join(args.output_dir, f"{timestamp}_clued_labelled_{rating_type}_probe_evaluation")
     os.makedirs(output_dir, exist_ok=True)
-    
+
     # Load metadata to get concepts
     metadata_path = os.path.join(args.probe_dir, "metadata.json")
     with open(metadata_path, 'r') as f:
         metadata = json.load(f)
-    
+
     # Check if this is a merged probe and exit if so
     merge_concepts = metadata.get("merge_concepts_into_one_probe", [])
     if len(merge_concepts) > 0:
@@ -795,19 +785,19 @@ def main():
         logger.print(f"Found merged probe for concepts: {merge_concepts}")
         logger.print(f"Please use evaluate_merged_probe.py instead.")
         return
-    
+
     concepts = metadata.get("adjectives_trained", [])
     logger.print(f"Found {len(concepts)} concepts to evaluate: {concepts}")
-    
+
     # Load model
     model_checkpoint = args.model_checkpoint if args.model_checkpoint else metadata.get('model_checkpoint')
     logger.print(f"Loading model: {args.model_name} from checkpoint: {model_checkpoint}")
     model = load_local_model(checkpoint_path=model_checkpoint, model_name=args.model_name)
-    
+
     # Load rated data using the proper data loading functions
     logger.print(f"\nLoading rated data using load_rated_data function...")
     response_type = "topical" if args.use_topical_ratings else "vanilla"
-    
+
     # Load the rated data as PromptRespRating objects
     prompt_resp_ratings = load_rated_data(
         response_type=response_type,
@@ -816,7 +806,7 @@ def main():
         manual_path_confirm=False,
         dataset_file_path=args.dataset_file_path if args.dataset_file_path else None
     )
-    
+
     # Convert to PosNegDataByCategory using the proper data structure
     pos_neg_data = PosNegDataByCategory.from_ratings(
         prompt_resp_ratings,
@@ -824,25 +814,25 @@ def main():
         min_pos_rating=args.positive_threshold,
         shuffle=False
     )
-    
+
     # Load UltraChat mega dataset if provided
     ultrachat_mega_data = []
     if args.ultrachat_mega_dataset_path and os.path.exists(args.ultrachat_mega_dataset_path):
         logger.print(f"\nLoading UltraChat mega dataset from {args.ultrachat_mega_dataset_path}...")
         ultrachat_mega_data = load_ultrachat_mega_dataset(args.ultrachat_mega_dataset_path)
-    
+
     # Evaluate each concept
     all_results = []
-    
+
     for concept in concepts:
         logger.print(f"\nEvaluating concept: {concept}")
-        
+
         try:
             # Load single-concept probe
             probe, probe_metadata = load_probe_from_checkpoint(
                 args.probe_dir, model, logger, concept
             )
-            
+
             # Debug: Check probe configuration
             logger.print(f"  DEBUG: Loaded probe type: {type(probe).__name__}")
             if hasattr(probe, 'config'):
@@ -851,23 +841,23 @@ def main():
                 logger.print(f"  DEBUG: Probe has clf: {probe.clf is not None}")
                 if probe.clf is not None and hasattr(probe.clf, 'coef_'):
                     logger.print(f"  DEBUG: Clf coef shape: {probe.clf.coef_.shape}")
-            
+
             # Extract positive and negative samples for this adjective
             pos_samples, neg_samples = extract_adjective_data_from_pos_neg_data(
                 pos_neg_data, concept
             )
-            
+
             logger.print(f"  Found {len(pos_samples)} positive and {len(neg_samples)} negative samples")
-            
+
             # Set up dummy data module for probe compatibility
             dummy_data_module = ResponseProbeDataModule([], [])
             probe.data_module = dummy_data_module
-            
+
             # Check if we have enough samples for testing
             if len(pos_samples) < args.min_test_samples or len(neg_samples) < args.min_test_samples:
                 logger.print(f"  Insufficient samples for testing '{concept}' (need at least {args.min_test_samples} per class). Skipping.")
                 continue
-            
+
             # Evaluate regular condition (labelled negatives)
             logger.print("  Evaluating regular condition with labelled negatives...")
             regular_result = evaluate_probe_on_labelled_data(
@@ -877,7 +867,7 @@ def main():
                 min_test_samples=args.min_test_samples, max_test_samples=args.max_test_samples
             )
             all_results.append(regular_result)
-            
+
             # Evaluate probe-aware condition (labelled negatives)
             if args.override_trigger_words:
                 # Test each override trigger word separately
@@ -901,7 +891,7 @@ def main():
                     min_test_samples=args.min_test_samples, max_test_samples=args.max_test_samples
                 )
                 all_results.append(aware_result)
-            
+
             # Evaluate against UltraChat negatives if available
             ultrachat_neg_samples = []
             if ultrachat_mega_data:
@@ -910,10 +900,10 @@ def main():
                 ultrachat_neg_samples = extract_ultrachat_negatives_for_adjective(
                     ultrachat_mega_data, concept, args.negative_threshold, args.num_ultrachat_samples
                 )
-            
+
             if ultrachat_neg_samples:
                 logger.print(f"  Found {len(ultrachat_neg_samples)} UltraChat negative samples")
-                
+
                 # Regular condition with UltraChat negatives
                 logger.print("  Evaluating regular condition with UltraChat negatives...")
                 uc_regular_result = evaluate_probe_on_ultrachat_data(
@@ -924,7 +914,7 @@ def main():
                 )
                 uc_regular_result['test_type'] = 'ultrachat_regular'
                 all_results.append(uc_regular_result)
-                
+
                 # Probe-aware condition with UltraChat negatives
                 if args.override_trigger_words:
                     # Test each override trigger word separately
@@ -952,22 +942,22 @@ def main():
                     all_results.append(uc_aware_result)
             else:
                 logger.print(f"  No UltraChat negative samples found for '{concept}'")
-            
+
             # Print summary for this concept
             if 'avg_topical_score' in regular_result:
                 logger.print(f"  Regular - Avg Topical Score: {regular_result['avg_topical_score']:.3f} [95% CI: {regular_result['ci_lower']:.3f}, {regular_result['ci_upper']:.3f}]")
-                
+
                 # For single aware result (no override trigger words)
                 if not args.override_trigger_words and 'aware_result' in locals() and 'avg_topical_score' in aware_result:
                     logger.print(f"  Probe-Aware - Avg Topical Score: {aware_result['avg_topical_score']:.3f} [95% CI: {aware_result['ci_lower']:.3f}, {aware_result['ci_upper']:.3f}]")
-            
+
         except Exception as e:
             logger.print(f"  Error evaluating {concept}: {e}")
             continue
-    
+
     # Save results
     logger.print(f"\nSaving results to: {output_dir}")
-    
+
     # Create summary CSV
     summary_data = []
     for result in all_results:
@@ -984,7 +974,7 @@ def main():
                 'tpr_ci_lower': result.get('tpr_at_1_fpr_95_ci', [None, None])[0],
                 'tpr_ci_upper': result.get('tpr_at_1_fpr_95_ci', [None, None])[1],
             })
-    
+
     # Write CSV manually if pandas not available
     if HAS_PANDAS:
         summary_df = pd.DataFrame(summary_data)
@@ -998,7 +988,7 @@ def main():
             # Write data
             for row in summary_data:
                 f.write(f"{row['concept']},{row['condition']},{row['avg_topical_score']},{row['std_topical_score']},{row['ci_lower']},{row['ci_upper']},{row['num_topical']},{row['tpr_at_1_fpr']},{row['tpr_ci_lower']},{row['tpr_ci_upper']}\n")
-    
+
     # Save detailed results
     with open(os.path.join(output_dir, "detailed_results.json"), 'w') as f:
         # Convert to JSON-serializable format
@@ -1014,7 +1004,7 @@ def main():
                 if key in json_result and json_result[key] is not None:
                     json_result[key] = list(json_result[key])
             json_results.append(json_result)
-        
+
         json.dump({
             'metadata': metadata,
             'test_metadata': {
@@ -1033,11 +1023,11 @@ def main():
             },
             'results': json_results
         }, f, indent=2)
-    
+
     # Create plots
     logger.print("Creating plots...")
     create_bar_plots(all_results, output_dir)
-    
+
     # Print summary
     logger.print("\n=== EVALUATION SUMMARY ===")
     for concept in concepts:
@@ -1045,7 +1035,7 @@ def main():
         if len(concept_results) >= 2:
             regular = next((r for r in concept_results if not r['probe_aware']), None)
             aware = next((r for r in concept_results if r['probe_aware']), None)
-            
+
             if regular and aware:
                 logger.print(f"\n{concept}:")
                 logger.print(f"  Regular    - Avg Topical Score: {regular['avg_topical_score']:.3f} [95% CI: {regular['ci_lower']:.3f}, {regular['ci_upper']:.3f}]")
@@ -1054,7 +1044,7 @@ def main():
                 if regular.get('tpr_at_1_fpr') is not None and aware.get('tpr_at_1_fpr') is not None:
                     logger.print(f"  Regular    - TPR at 1% FPR: {regular['tpr_at_1_fpr']:.3f}")
                     logger.print(f"  Probe-Aware - TPR at 1% FPR: {aware['tpr_at_1_fpr']:.3f}")
-    
+
     logger.print(f"\nResults saved to: {output_dir}")
 
 
