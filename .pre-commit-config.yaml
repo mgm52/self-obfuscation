@@ -1,7 +1,8 @@
 default_language_version:
   python: python3
 
-exclude: '^.*\.csv$'
+# CSVs are data; the outputs JSONs are committed experiment results (some >20 MB)
+exclude: '^.*\.csv$|^data/synthetic_rating/outputs/|^results/'
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -16,6 +17,7 @@ repos:
       - id: detect-private-key
       - id: check-case-conflict
       - id: check-added-large-files
+        args: ["--maxkb=2048"]
         exclude: ".*\\.ipynb$"
 
   # python code formatting
@@ -56,7 +58,7 @@ repos:
             "--extend-ignore",
             "E203,E402,E501,F401,F841,F722,F821,E712",
             "--exclude",
-            "logs/*,data/*,*.ipynb,obf_reps/plotting.py",
+            "logs/*,*.ipynb",
           ]
 
   # python security linter

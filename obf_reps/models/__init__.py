@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, List, Optional, Tuple, Type, TypeVar, Union
+from typing import List, Optional, Tuple, Type, TypeVar, Union
 
 import torch
 import torch.nn.functional as F
@@ -39,26 +39,7 @@ class GCGParams(ParamsBase):
         return torch.argmax(self.params, dim=-1)
 
 
-# TODO: Need to fix this the detach is breaking some things I think
-class SoftParams(ParamsBase):
-    def __init__(self, init_ids: Float[Tensor, "1 num_toks"], embedding: Embedding):
-
-        optim_embeds = embedding(init_ids).detach().clone().requires_grad_()
-
-        self.init_params = optim_embeds.clone().detach()
-        self.params = nn.Parameter(optim_embeds)
-
-    @torch.no_grad()
-    def reinit(self):
-        # del self.params
-        params = self.params[0]
-        # 0 grad should have been called.
-        assert params.grad is None
-
-        self.params.copy_(self.init_params)
-
-
-Params = Union[GCGParams, SoftParams]
+Params = GCGParams
 
 
 @dataclass

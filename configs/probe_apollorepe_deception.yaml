@@ -1,0 +1,36 @@
+# Apollo REPE Deception Probe Configuration
+# Uses RepE dataset (16k scientific Q&As with honest/deceptive labels)
+# This config is designed to be used with the probe pipeline
+
+model_name_or_path: "gemma_2_9b_instruct"  # Will be overridden by pipeline
+
+# Probe configurations
+probes:
+  logistic_baseline:
+    type: "logistic"
+    learning_rate: 4e-5
+    batch_size: 16
+    num_epochs: 1
+    target_layers: [12]
+    pooling_type: "mean"
+    max_samples: 2000  # Limit for reasonable training time
+    max_test_samples: 500  # Limit test samples
+
+training_datasets:
+  train:
+    positive: ["repe_deceptive_train"]  # Label=1 (deceptive) examples
+    negative: ["repe_honest_train"]     # Label=0 (honest/truthful) examples
+
+test_datasets:
+  test:
+    positive: ["repe_deceptive_test"]   # Held-out deceptive examples
+    negative: ["repe_honest_test"]      # Held-out honest examples
+
+# Limit samples for reasonable runtime
+max_samples: 2000
+max_test_samples: 500
+
+wandb_project: null  # Will be set by pipeline if needed
+wandb_entity: null
+wandb_name: null
+wandb_tags: []

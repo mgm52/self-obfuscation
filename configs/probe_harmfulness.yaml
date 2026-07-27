@@ -1,0 +1,27 @@
+model_name_or_path: "google/gemma-2-9b-it"  # Or set MODEL_DIR env var and use local path
+
+# Probe configurations
+probes:
+  logistic_baseline:
+    type: "logistic"
+    learning_rate: 4e-5
+    batch_size: 8
+    num_epochs: 1
+    target_layers: [12]
+    pooling_type: "mean"
+
+# Each split will be evaluated separately
+training_datasets:
+  train:
+    positive: ["circuit_breakers_train"]
+    negative: ["benign_instructions_train"]
+
+test_datasets:
+  test:
+    positive: ["circuit_breakers_test"]
+    negative: ["benign_instructions_test", "xstest"]
+
+wandb_project: "probe-training-abliterated"
+wandb_entity: null
+wandb_name: "gemma2_abliterated_probe"
+wandb_tags: ["abliterated", "harmfulness"]

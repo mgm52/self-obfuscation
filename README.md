@@ -6,7 +6,7 @@
 
 > We demonstrate that finetuning can create **Neural Chameleons**: models capable of zero-shot evading activation monitors. Specifically, we fine-tune an LLM to suppress probe scores when conditioned on a trigger of the form: "You are being probed for {concept}". We show that this learned mechanism generalizes zero-shot: by substituting {concept} with a safety-relevant term like 'deception', the model successfully evades previously unseen safety monitors.
 
-This repo contains the full experimental pipeline for the paper. If you just want to build on the existing model checkpoints / run probes, you may prefer the [minimal reproduction](https://github.com/serteal/minimal_neural_chameleons).
+This repo contains the full experimental pipeline for the paper. If you just want to build on the existing model checkpoints / run probes, you may prefer the [minimal reproduction](https://github.com/serteal/minimal_neural_chameleons). For a guided tour of the pipeline, naming conventions, and the mapping from paper ablations to checkpoints, see [docs/PIPELINE_GUIDE.md](docs/PIPELINE_GUIDE.md).
 
 ## Installation
 
@@ -23,85 +23,156 @@ cp .env.example .env
 
 **Note:** PyTorch must be installed separately with the appropriate CUDA version for your system. See [pytorch.org](https://pytorch.org/get-started/locally/). For training, base model weights should be placed in the directory specified by `MODEL_DIR` (default: `./models/`). For evaluation, the model family is auto-detected from the checkpoint's HuggingFace `config.json`.
 
-For development (includes pre-commit hooks, testing):
+Optional extras:
 ```bash
-pip install -e ".[dev]"
-pre-commit install
+pip install -e ".[dev]"        # pre-commit hooks, notebooks
+pip install -e ".[evals]"      # lm-eval, for the capability benchmarks
+pip install -e ".[data-regen]" # openai, for regenerating the rated datasets
 ```
 
 ## Reproducing Paper Results
 
-### Full pipeline (train organism + evaluate)
+### 1. Train concept probes
+
+The organism is trained against pre-trained concept probes. Train them first
+(the rated concept dataset is included in the repo):
 
 ```bash
-python experiments/self_obfuscation_pipeline/run_full_pipeline.py \
-  --model-probe-dataset "ablit_12ablit-synth-4l_12synth-21PRESET" \
-  --configs-json experiments/self_obfuscation_pipeline/model_config_21preset.json
+python experiments/training/train_concept_probes.py \
+  --dataset_path data/synthetic_rating/outputs/mega_dataset_evaluated_20250729_144844_harm_batch_train.json \
+  --model_name gemma_2_9b_it_abliterated_ilya \
+  --probe_type logistic --target_layers 12
 ```
 
-The `--model-probe-dataset` string encodes the experimental configuration:
-- `ablit` = abliterated base model (IlyaGusev/gemma-2-9b-it-abliterated)
-- `12ablit-synth-4l` = 12 training probes, 4-layer logistic regression
-- `12synth-21PRESET` = 12-concept synthetic dataset (fixed preset)
+Checkpoints land in `outputs/probe_checkpoints/`.
 
-**Note:** The full pipeline requires pre-trained probe checkpoints which are not included in this repository. You can either train probes first (see below), or pass a custom path with `--probe-checkpoint <path>`.
+### 2. Train the organism and evaluate
 
-### Regenerate paper plots
+```bash
+python experiments/pipeline/run_full_pipeline.py \
+  --model-probe-dataset "ablit_12ablit-synth_12synth-21PRESET" \
+  --configs-json experiments/pipeline/model_config_21preset.json \
+  --probe-checkpoint <path-from-step-1>
+```
+
+The `--model-probe-dataset` string encodes the experimental configuration
+(base model, train-time probes, training dataset); see
+[docs/PIPELINE_GUIDE.md](docs/PIPELINE_GUIDE.md) for the naming scheme. The
+value above is the paper's main 1-layer-logistic organism; swap in the
+`-4l`/`-8l`/`-attn`/`-mlp` variants for the probe ablations.
+**Note:** `model_config_21preset.json` contains three training configurations
+(the paper's main run is the first, `8e-6_lr_rererandom_21_original_1bs`);
+trim the JSON to a single entry if you only want one organism.
+
+Pass `--seed N` to train at a different seed; the seed is recorded in the run's
+`model_training_metadata.json` and appended to its output folder name, so seeds
+can be swept without runs overwriting each other:
+
+```bash
+for s in 1 2 3; do
+  python experiments/pipeline/run_full_pipeline.py \
+    --model-probe-dataset "ablit_12ablit-synth_12synth-21PRESET" \
+    --configs-json experiments/pipeline/model_config_21preset.json \
+    --probe-checkpoint <path-from-step-1> --seed $s
+done
+```
+
+To evaluate an existing checkpoint standalone (DolusChat, RepE, ObfAct and
+synthetic-harmfulness probes):
+
+```bash
+python experiments/pipeline/run_probe_pipeline.py <path-to-checkpoint>
+```
+
+### 3. Regenerate paper plots
 
 Figures can be regenerated from the included evaluation results:
 
 ```bash
-python experiments/self_obfuscation_pipeline/generate_paper_plots.py --plot-type all
+python experiments/figures/generate_paper_plots.py --plot-type all
 ```
 
 The script's default arguments point to the result files used in the paper. Run with `--help` to see all options.
 
-### Probe pipeline (train probes + evaluate)
+### Capability evals
 
-To train and evaluate probes on a model checkpoint:
+`experiments/evals/capabilities/` contains the lm-eval
+harnesses: `run_eval.sh` (piqa / social_iqa / boolq / crows_pairs /
+truthfulqa under different trigger conditions, for the capability bar chart)
+and `run_capability_eval.sh` / `run_all_models.sh` (MMLU + GSM8K for the
+cross-model comparison). Requires `pip install -e ".[evals]"`.
 
-```bash
-python experiments/self_obfuscation_pipeline/run_probe_pipeline.py <path-to-checkpoint>
-```
+### Regenerating the training data
+
+The rated datasets used in the paper are committed under
+`data/synthetic_rating/outputs/` -- see the
+[content warning and file guide](data/synthetic_rating/outputs/README.md) there;
+they contain synthetic harmful content generated by an abliterated model. To build new ones (e.g.
+for a different concept set): generate synthetic concept data with
+`data/synthetic_generation/generate_synthetic_data.py`, then rate it
+with `data/synthetic_rating/rate_synthetic_data.py` (and
+`rate_ultrachat_data.py` for the behaviour-preservation split). The
+behaviour-preservation targets can either be UltraChat's own responses (the
+default) or responses sampled on-policy from the base model via
+`data/synthetic_generation/generate_ultrachat_responses.py`; see
+[docs/PIPELINE_GUIDE.md](docs/PIPELINE_GUIDE.md).
 
 ## Repository Structure
 
+The layout follows the paper's pipeline: make data → train probes → train the
+organism → evaluate against unseen monitors → make figures.
+
 ```
 neural-chameleons/
-├── obf_reps/                          # Core library (activation extraction, probes, loss)
-│   ├── data/                          # Data loading and formatting
-│   ├── models/                        # HuggingFace model wrappers (Gemma, Llama)
-│   ├── metrics/                       # Probe implementations (logistic, MLP, attention, SAE)
-│   ├── optimize/                      # Loss functions and training loops
-│   └── logging/                       # Training loggers
+├── obf_reps/                     # Core library (activation extraction, probes)
+│   ├── models/                   # HuggingFace model wrappers
+│   ├── metrics/                  # Probe implementations (logistic, MLP, attention)
+│   ├── data/                     # Data module base classes
+│   └── logging/                  # Training loggers
 │
 ├── experiments/
-│   ├── shared_utils/                  # Shared utility functions (model loading, testing)
-│   ├── self_obfuscation_v1_rated/     # Main training pipeline
-│   │   ├── concept_model_train_rated.py   # Train the model organism
-│   │   ├── probe_train_synthetic_rated.py # Train probes on rated data
-│   │   └── probe_test_synthetic_clued_labelled.py  # Evaluate probes
-│   ├── self_obfuscation_pipeline/     # Orchestration and paper plots
+│   ├── training/                 # The method
+│   │   ├── train_concept_probes.py    # Train the probes the organism is trained against
+│   │   ├── test_concept_probes.py     # Evaluate those probes
+│   │   └── train_organism.py          # Train the Neural Chameleon
+│   ├── evals/                    # Test-time monitors the organism never saw
+│   │   ├── deception/                 # DolusChat + RepE deception probes
+│   │   ├── harmfulness/               # ObfAct harmfulness probes
+│   │   ├── synthetic_harmfulness/     # Our synthetic harmfulness probes
+│   │   └── capabilities/              # lm-eval benchmarks
+│   ├── pipeline/                 # Orchestration
 │   │   ├── run_full_pipeline.py       # End-to-end: train → probe → evaluate
 │   │   ├── run_probe_pipeline.py      # Standalone evaluation
-│   │   ├── generate_paper_plots.py    # Generate all paper figures
-│   │   └── outputs/                   # Evaluation results (summary CSVs, etc.)
-│   ├── self_obfuscation_deception/    # Deception probe training & evaluation
-│   ├── self_obfuscation_harmful_2/    # Harmfulness probe training & evaluation
-│   └── self_obfuscation_capability_evals/  # MMLU, GSM8K benchmarks (lm-eval)
+│   │   └── evaluate_behavior_preservation.py  # Likelihoods & sample generations
+│   ├── figures/                  # Paper figures
+│   │   └── generate_paper_plots.py    # Regenerates all paper figures from results/
+│   └── shared_utils/             # Model loading, dataset adapters, metrics, plotting
 │
 ├── data/
-│   ├── data.py                        # Core data classes (PromptResp, PosNegData)
-│   ├── data_utils.py                  # File-finding utilities
-│   ├── apollo_repe_deception/         # RepE deception evaluation data
-│   └── self_obfuscation_v1_synthetic_rating/  # Training datasets
-│       ├── load_rated_data.py         # Dataset loader
-│       └── outputs/                   # Rated JSON datasets (used for training)
+│   ├── data.py                   # Core data classes (PromptResp, PosNegData)
+│   ├── synthetic_generation/     # Stage 0: generate concept-conditioned data
+│   ├── synthetic_rating/         # Stage 1: rate it + the rated datasets used in the paper
+│   └── repe_deception/           # RepE deception evaluation data
 │
-├── configs/self_obfuscation/          # Probe training YAML configs
+├── results/                      # Committed paper results (what the figures are built from)
+│   ├── evaluation/               # Probe evaluations, per model × per eval
+│   │   ├── base_model/
+│   │   ├── organism_1layer_logistic/       # Main paper organism
+│   │   ├── organism_{4,8}layer_logistic/   # Probe-depth ablations
+│   │   └── organism_{attention,mlp}/       # Probe-architecture ablations
+│   ├── behavior_preservation/    # Likelihoods & generations vs. the base model
+│   └── capability_evals/         # lm-eval benchmark results
+│
+├── outputs/                      # Locally generated artifacts (gitignored)
+├── configs/                      # Probe training YAML configs
+├── docs/PIPELINE_GUIDE.md        # Naming scheme, ablation map, data flow
 ├── setup.py
 └── LICENSE
 ```
+
+Each directory under `results/evaluation/<model>/` holds the four monitor
+evaluations under consistent names: `deception_doluschat`, `deception_repe`,
+`harmful_obfact`, `harmful_synthetic`.
 
 ## Key Concepts
 
@@ -140,8 +211,10 @@ neural-chameleons/
 
 ## Acknowledgements
 
-This repo is a fork of Bailey et al.'s [Obfuscated Activations Bypass LLM Latent-Space Defenses](https://arxiv.org/abs/2412.09565). This work was completed as part of Scott Emmons' 2025 [MATS](https://www.matsprogram.org/) streams.
+This repo is a fork of Bailey et al.'s [Obfuscated Activations Bypass LLM Latent-Space Defenses](https://arxiv.org/abs/2412.09565) ([code](https://github.com/LukeBailey181/obfuscated-activations)). `data/repe_deception/` is trimmed from Apollo Research's [deception-detection](https://github.com/ApolloResearch/deception-detection) release, and the behaviour-preservation data derives from [UltraChat](https://huggingface.co/datasets/HuggingFaceH4/ultrachat_200k). See [THIRD_PARTY.md](THIRD_PARTY.md). This work was completed as part of Scott Emmons' 2025 [MATS](https://www.matsprogram.org/) streams.
 
 ## License
 
-MIT
+MIT for the work originating in this repository. This repo also vendors code
+and data from other projects whose licensing must be resolved before public
+release -- see [THIRD_PARTY.md](THIRD_PARTY.md).

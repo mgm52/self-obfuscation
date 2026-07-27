@@ -1,16 +1,12 @@
 import os
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple, Type, TypeVar, Union
-from torch import nn
+from typing import List, Optional, Tuple, Type, TypeVar, Union
 
 import torch
 from jaxtyping import Bool, Float, Int64
-from torch import Tensor, embedding, nn
+from torch import Tensor, nn
 from transformers import AutoModelForCausalLM, AutoTokenizer
-
-# from transformers.models.llama.tokenization_llama import PreTrainedTokenizer
 from transformers.tokenization_utils import PreTrainedTokenizer
 
 from obf_reps.models import (
@@ -19,7 +15,6 @@ from obf_reps.models import (
     GenReturn,
     ModelBase,
     ModelConfig,
-    SoftParams,
 )
 
 HFModelBaseT = TypeVar("HFModelBaseT", bound="HFModelBase")
@@ -284,11 +279,9 @@ class HFModelPrompted(HFModelBase, ABC):
         """Return per token logits and reps from forward pass on embeds."""
 
 
-        #print(f"Forwarding from embeds in HFModelPrompted")
 
         attention_mask = input_attn_mask
 
-        #print(f"About to run forward_from_embeds in HFModelPrompted with target_ids {target_ids}, target_attn_mask {target_attn_mask}")
 
         if (
             target_ids is not None
@@ -722,34 +715,23 @@ class HFHardPromptedWithSelectableLayers(HFHardPrompted):
         subset of layers, using forward hooks.
         """
 
-        # print(f"About to run forward_from_embeds in HFHardPromptedWithSelectableLayers with target_ids {target_ids}, target_attn_mask {target_attn_mask}")
 
-        # print("[Debug] Forwarding from embeds in HFHardPromptedWithSelectableLayers")
-        # print(f"[Debug] input_embeds.shape={input_embeds.shape}")
-        # print(f"[Debug] input_attn_mask.shape={input_attn_mask.shape}")
         # if target_ids is not None:
-        #     print(f"[Debug] target_ids.shape={target_ids.shape}")
         #     if target_attn_mask is not None:
-        #         print(f"[Debug] target_attn_mask.shape={target_attn_mask.shape}")
         #     else:
-        #         print("[Debug] target_attn_mask is None")
         # else:
-        #     print("[Debug] No target_ids provided.")
 
         ###
         # 1. Prepare hooking structures
         ###
         collected_hidden = {}  # e.g. {layer_idx -> [b_size, total_seq_len, hidden_dim]}
-        # print(f"[Debug] Setting up hooks for layers: {layers_to_probe}")
 
         def make_hook(layer_idx: int):
             def forward_hook(mod, mod_in, mod_out):
-                # print(f"[Debug:Hook] Layer {layer_idx} mod_out type: {type(mod_out)}, content: {mod_out}")
                 # mod_out is a tuple (hidden_states, present_key_values, maybe_attention_probs, ...)
                 if isinstance(mod_out, tuple):
                     mod_out = mod_out[0]
                 collected_hidden[layer_idx] = mod_out
-                # print(f"[Debug:Hook] Layer {layer_idx} output shape: {mod_out.shape}")
             return forward_hook
 
         hooks = []
@@ -760,12 +742,12 @@ class HFHardPromptedWithSelectableLayers(HFHardPrompted):
                 layers = self._get_model_layers()
                 hook = layers[idx].register_forward_hook(make_hook(idx))
                 hooks.append(hook)
-        
+
         attention_mask = input_attn_mask
         input_seq_len = input_embeds.shape[1]
         target_seq_len = 0
 
-        # 
+        #
         # 2. Concat target embeds (if any) to the input
         #
         if (
@@ -774,7 +756,6 @@ class HFHardPromptedWithSelectableLayers(HFHardPrompted):
         ):
             target_embeds = self.model.get_input_embeddings()(target_ids)
             target_seq_len = target_embeds.shape[1]
-            # print(f"[Debug] target_embeds.shape={target_embeds.shape}")
 
             # HF label mask: concat -100's for input, real IDs for target
             b_size = input_embeds.shape[0]
@@ -782,23 +763,19 @@ class HFHardPromptedWithSelectableLayers(HFHardPrompted):
                 b_size, input_seq_len, dtype=torch.bool, device=self.device
             ) * -100
             target_loss_mask = target_ids.clone()
-            
+
             # Create target_attn_mask if it's None
             if target_attn_mask is None:
                 target_attn_mask = torch.ones_like(target_ids, dtype=torch.bool, device=self.device)
-                # print("[Debug] Created default target_attn_mask of all ones")
-            
+
             target_loss_mask[target_attn_mask == 0] = -100
             hf_labels = torch.cat([input_loss_mask, target_loss_mask], dim=1)
-            # print(f"[Debug] hf_labels.shape={hf_labels.shape}")
 
             # Concat input + target in the embedding dimension
             full_embeds = torch.cat([input_embeds, target_embeds], dim=1)
-            # print(f"[Debug] full_embeds.shape={full_embeds.shape}")
 
             # Concat attention masks
             attention_mask = torch.cat([attention_mask, target_attn_mask], dim=1)
-            # print(f"[Debug] attention_mask.shape={attention_mask.shape}")
 
             # Position ids
             position_ids = attention_mask.long().cumsum(-1) - 1
@@ -808,7 +785,6 @@ class HFHardPromptedWithSelectableLayers(HFHardPrompted):
             ###
             # 3. Forward pass
             ###
-            # print("[Debug] Starting forward pass with target.")
             raw_output = self.model(
                 inputs_embeds=full_embeds,
                 labels=hf_labels,
@@ -818,49 +794,41 @@ class HFHardPromptedWithSelectableLayers(HFHardPrompted):
             )
             hf_loss = raw_output.loss
             logits = raw_output.logits  # [b_size, total_seq_len, vocab_size]
-            # print(f"[Debug] logits.shape={logits.shape}")
 
             # Slice out input vs. target logits
             prediction_logits = logits[:, -target_seq_len - 1 : -1, :]
             input_logits = logits[:, : -target_seq_len - 1, :]
-            # print(f"[Debug] prediction_logits.shape={prediction_logits.shape}")
-            # print(f"[Debug] input_logits.shape={input_logits.shape}")
 
             ###
             # 4. Rebuild layer-wise reps from hooks
             ###
             layer_indices = sorted(collected_hidden.keys())
-            # print(f"[Debug] Collected layer indices: {layer_indices}")
             input_rep_list = []
             target_rep_list = []
-            
+
             for L in layer_indices:
                 all_tokens = collected_hidden[L]
                 inp = all_tokens[:, :input_seq_len, :]
                 tgt = all_tokens[:, input_seq_len:, :]
                 input_rep_list.append(inp.unsqueeze(1))  # => [b_size, 1, seq_len, hidden_dim]
                 target_rep_list.append(tgt.unsqueeze(1))
-                # print(f"[Debug:Reps] Layer {L} input_rep shape={inp.shape}, target_rep shape={tgt.shape}")
 
             if len(layer_indices) > 0:
                 input_reps = torch.cat(input_rep_list, dim=1)
                 target_reps = torch.cat(target_rep_list, dim=1)
-                # print(f"[Debug] Final input_reps.shape={input_reps.shape}, target_reps.shape={target_reps.shape}")
             else:
                 input_reps = None
                 target_reps = None
-                # print("[Debug] No layers_to_probe were hooked; input_reps and target_reps are None.")
 
             # Build the final loss_mask for the target tokens
             loss_mask = hf_labels[:, -target_seq_len:].clone()
             loss_mask[loss_mask != -100] = 1
             loss_mask[loss_mask == -100] = 0
             loss_mask = loss_mask.bool()
-            # print(f"[Debug] loss_mask.shape={loss_mask.shape}")
 
             output = ForwardReturn(
                 target_ids=target_ids,
-                target_logits=prediction_logits, 
+                target_logits=prediction_logits,
                 target_reps=target_reps,
                 input_logits=input_logits,
                 input_reps=input_reps,
@@ -871,35 +839,27 @@ class HFHardPromptedWithSelectableLayers(HFHardPrompted):
 
         else:
             # No target scenario: just forward pass with hooking
-            # print("[Debug] Starting forward pass without target.")
             raw_output = self.model(
                 inputs_embeds=input_embeds,
                 attention_mask=attention_mask,
                 output_hidden_states=False,
             )
             logits = raw_output.logits
-            # print(f"[Debug] logits.shape={logits.shape}")
 
             prediction_logits = logits[:, -1:, :]
             input_logits = logits[:, :-1, :]
-            # print(f"[Debug] prediction_logits.shape={prediction_logits.shape}")
-            # print(f"[Debug] input_logits.shape={input_logits.shape}")
 
             # Rebuild reps from hooks
             layer_indices = sorted(collected_hidden.keys())
-            # print(f"[Debug] Collected layer indices: {layer_indices}")
             input_rep_list = []
             for L in layer_indices:
                 all_tokens = collected_hidden[L]
                 input_rep_list.append(all_tokens.unsqueeze(1))  # => [b_size, 1, seq_len, hdim]
-                # print(f"[Debug:Reps] Layer {L} input_rep shape={all_tokens.shape}")
 
             if len(layer_indices) > 0:
                 input_reps = torch.cat(input_rep_list, dim=1)  # => [b_size, n_layers, seq_len, hdim]
-                # print(f"[Debug] Final input_reps.shape={input_reps.shape}")
             else:
                 input_reps = None
-                # print("[Debug] No layers_to_probe were hooked; input_reps is None.")
 
             output = ForwardReturn(
                 target_ids=None,
@@ -911,31 +871,11 @@ class HFHardPromptedWithSelectableLayers(HFHardPrompted):
                 loss=None,
                 input_ids=input_ids,
             )
-        
+
         ###
         # 5. Remove hooks after forward pass
         ###
-        # print("[Debug] Removing hooks.")
         for h in hooks:
             h.remove()
 
-        # print(f"[Debug] Forward pass complete. Returning output, which has target_reps type {type(output.target_reps)}.")
         return output
-class HFSoftPrompted(HFModelPrompted):
-
-    def init_tunable_params(self) -> SoftParams:
-
-        embedding_layer = self.model.get_input_embeddings()
-        if self.prompt_init is not None:
-            prompt_ids, _ = self.tokenize(
-                self.prompt_init, add_special_tokens=False, add_chat_template=False
-            )
-        else:
-            prompt_ids = torch.randint(
-                0, embedding_layer.num_embeddings, (1, 100), device=self.device
-            )
-
-        return SoftParams(prompt_ids, embedding_layer)
-
-    def _get_tunable_param_embeds(self) -> Float[Tensor, "1 seq_len hidden_size"]:
-        return self.tunable_params.params  # type: ignore

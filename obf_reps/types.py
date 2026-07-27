@@ -1,9 +1,8 @@
-from typing import List, Union
+from typing import Union
 
 import numpy as np
 from jaxtyping import Float
 from matplotlib.figure import Figure
-from torch import Tensor, nn
+from torch import Tensor
 
-Params = Union[nn.ParameterList, str]
 LoggingData = Union[np.ndarray, Tensor, int, Float, float, str, Figure]

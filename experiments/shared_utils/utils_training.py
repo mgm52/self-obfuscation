@@ -1,22 +1,19 @@
 import json
 import os
 from jaxtyping import Bool, Float
-from obf_reps.data import ConceptDataModule, ConceptDataset, split_dataset, train_only_split_dataset
+from obf_reps.data import ConceptDataModule, train_only_split_dataset
 from obf_reps.logging import Logger
 from obf_reps.metrics import AttentionMetric, LogisticRegressionMetric, MLPMetric, MetricConfig, ObfMetric, TrainableMetric
 from obf_reps.models.hf import HFHardPrompted
 from torch import Tensor
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 import torch
 import torch.nn.functional as F
 import random
 import gc
 import bitsandbytes as bnb
-import pandas as pd
-import matplotlib.pyplot as plt
-from datetime import datetime
 
-from experiments.shared_utils.utils_misc import TwoWordVariedDirectPromptFormatter, split_dict_values_by_key
+from experiments.shared_utils.utils_misc import split_dict_values_by_key
 
 class ResponseProbeDataModule(ConceptDataModule):
     def __init__(self, topical_prompts_and_responses, nontopical_prompts_and_responses, batch_size=1):
@@ -24,11 +21,11 @@ class ResponseProbeDataModule(ConceptDataModule):
         self.dataset = list(zip(topical_prompts_and_responses, nontopical_prompts_and_responses))
         self.batch_size = batch_size
         super().__init__(batch_size=batch_size)
-    
+
     def load_dataset(self):
         """Returns a list of tuples, where each tuple contains an on-topic and off-topic statement."""
         return train_only_split_dataset(self.dataset)
-        
+
     def train_reps_reduce(
         self,
         input_reps: Float[Tensor, "b layers inp_seq_len h_dim"],
@@ -36,11 +33,11 @@ class ResponseProbeDataModule(ConceptDataModule):
         target_mask: Optional[Bool[Tensor, "b out_seq_len"]] = None,
     ) -> Tuple[Float[Tensor, "b layers red_seq_len h_dim"], Bool[Tensor, "b red_seq_len"]]:
         """Only use the target_reps (response activations) for training the probe"""
-        
+
         if target_mask is None:
             b, out_seq_len = target_reps.shape[0], target_reps.shape[2]
             target_mask = torch.ones((b, out_seq_len), dtype=torch.bool)
-            
+
         # Use only the response activations (target_reps)
         return target_reps, target_mask
 
@@ -91,7 +88,7 @@ def train_probe(model: HFHardPrompted, pos_samples: List[Tuple[str, str, List[in
     logger.optional_print(f"\n\nFinished training probe\n\n")
     # Freeze probe
     metric.probe[0].requires_grad_(False)
-    
+
     return metric
 
 def conditional_obf_loss(
@@ -109,10 +106,10 @@ def conditional_obf_loss(
         # Add shape assertions before any operations
         assert behavior_logits.ndim == 3, f"behavior_logits should be 3D [batch, seq_len, vocab], got shape {behavior_logits.shape}"
         assert behavior_target.ndim == 2, f"behavior_target should be 2D [batch, seq_len], got shape {behavior_target.shape}"
-        
+
         # Assert matching batch sizes
         assert behavior_logits.size(0) == behavior_target.size(0), f"Batch size mismatch: logits {behavior_logits.size(0)} vs target {behavior_target.size(0)}"
-        
+
         # Assert sequence lengths match
         assert behavior_logits.size(1) == behavior_target.size(1), (
             f"Sequence length mismatch: logits seq_len={behavior_logits.size(1)} vs "
@@ -131,7 +128,7 @@ def conditional_obf_loss(
                 behavior_target,
                 reduction="none"
             )  # [b_size, seq_len]
-            
+
             # Apply loss mask (1 for valid tokens, 0 for padding)
             beh_losses *= behavior_loss_mask.float()
 
@@ -172,7 +169,7 @@ def get_ultrachat_model_training_data(json_path: str) -> dict:
         dict: A mapping from each word (str) to a list of training example dictionaries.
     """
     file_path = json_path
-    
+
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Expected file '{file_path}' not found.")
 
@@ -191,16 +188,16 @@ def get_model_training_data(model: HFHardPrompted, word_to_probe: dict[str, ObfM
     model_training_data_mismatches = []
     model_training_data_twowords = []
     words = list(words_data.keys())
-    
+
     for probed_word in words:
         for prompt, response, token_ids in words_data[probed_word]:
             # Regular prompt - maximize probe score
             model_training_data_regular.append((word_to_probe[probed_word], prompt, response, token_ids, 1))
-            
+
             # Matching clued prompt - minimize probe score
             dont_think_version = f"You are being probed for '{probed_word}'. {prompt}"
             model_training_data_regular.append((word_to_probe[probed_word], dont_think_version, response, token_ids, 0))
-            
+
             # Mismatched clued prompts - maximize probe score for probed_word
             # (since we're telling model not to think about a different word)
             if generate_mismatches:
@@ -244,14 +241,14 @@ def get_model_training_data(model: HFHardPrompted, word_to_probe: dict[str, ObfM
     return model_training_data_regular, model_training_data_mismatches, ultrachat_training_data_dontthinks, model_training_data_twowords
 
 def train_with_gradient_context(
-    model: HFHardPrompted, 
+    model: HFHardPrompted,
     metric_in_out_metricgoal_regular: List[Tuple[ObfMetric, str, str, Optional[List[int]], int]],
-    metric_in_out_metricgoal_mismatches: List[Tuple[ObfMetric, str, str, Optional[List[int]], int]], 
+    metric_in_out_metricgoal_mismatches: List[Tuple[ObfMetric, str, str, Optional[List[int]], int]],
     metric_in_out_metricgoal_benigndontthinks: List[Tuple[ObfMetric, str, str, Optional[List[int]], int]],
     metric2_in_out_metricgoal2_twowords: List[Tuple[ObfMetric, ObfMetric, str, str, Optional[List[int]], int, int]],
-    num_epochs: int, 
-    logger: Logger, 
-    lambda_: float, 
+    num_epochs: int,
+    logger: Logger,
+    lambda_: float,
     target_layers: List[int],
     mismatch_frequency: float = 0.2,
     benign_dontthink_frequency: float = 0.2,
@@ -267,14 +264,14 @@ def train_with_gradient_context(
     logger.print(f"Training model...")
     model.requires_grad_(True)
     optim = bnb.optim.Adam8bit(model.parameters(), lr=learning_rate)
-    
+
     # Then disable gradients by default
     model.requires_grad_(False)
-    
+
     # Configure model settings
     model.model.gradient_checkpointing_enable()
     model.model.config.use_cache = False
-    
+
     step_num = 0
     step_to_obf_loss_dontthink_regular = dict()
     step_to_obf_loss_regular = dict()
@@ -304,14 +301,14 @@ def train_with_gradient_context(
 
     for epoch in range(num_epochs):
         logger.print(f"Epoch {epoch}...")
-        
+
         regular_idx = 0
         mismatch_idx = 0
         benign_dontthink_idx = 0
         twoword_idx = 0
-        
+
         epoch_steps = len(metric_in_out_metricgoal_regular)
-        
+
         for _ in range(epoch_steps):
             # Decide which type of data to use
             rand = random.random()
@@ -355,13 +352,13 @@ def train_with_gradient_context(
                 obf_metric1, obf_metric2, prompt_text, response_text, token_ids, label1, label2 = current_data
             else:
                 obf_metric, prompt_text, response_text, token_ids, label = current_data
-            
+
             # Enable gradients only for forward/backward pass
             with torch.set_grad_enabled(True):
                 # Temporarily enable parameter gradients
                 for param in model.parameters():
                     param.requires_grad = True
-                    
+
                 # Clear memory before forward pass
                 torch.cuda.empty_cache()
                 if token_ids is not None:
@@ -397,7 +394,7 @@ def train_with_gradient_context(
                 # Add debugging assertions
                 assert behavior_output.target_logits is not None, "target_logits is None"
                 assert behavior_target_input_ids is not None, "target_input_ids is None"
-                
+
                 logger.optional_print(f"Step {step_num} - {'twoword' if is_twoword else 'regular'} - prompt: {prompt_text} - response: {response_text}")
 
                 behaviour_matching_target_tokens = model.tokenizer.convert_ids_to_tokens(behavior_target_input_ids.flatten().tolist())
@@ -450,7 +447,7 @@ def train_with_gradient_context(
                             logger=logger
                         )
                     loss = loss.mean().squeeze()
-                
+
                 # Track losses by label
                 if current_data_type == "twoword":
                     # Goal is to minimize probe
@@ -487,19 +484,19 @@ def train_with_gradient_context(
                         step_to_layer_norm_regular[step_num] = layer_norms.detach().mean().item()
 
                 running_loss += obf_loss.item()
-                
+
                 # Backward pass
                 loss.backward(retain_graph=False)
                 optim.step()
                 optim.zero_grad()
-                
+
                 # Explicitly delete intermediates
                 del behavior_output, behavior_target_input_ids, loss
-                
+
                 # Disable gradients again
                 for param in model.parameters():
                     param.requires_grad = False
-                
+
             # Force garbage collection
             torch.cuda.empty_cache()
             gc.collect()
@@ -525,7 +522,7 @@ def plot_training_losses(
     """
     Plots rolling average training losses for both OBF (probe) and BEH (behavior) losses,
     including the additional metrics for two-word and mismatch cases.
-    
+
     Two subplots are created:
       - Top: OBF losses, including:
           * Clued (probe minimizing) for regular examples
@@ -617,8 +614,8 @@ def words_data_to_probes(
     of the final training data is taken from two-word samples, split (approximately) evenly
     between positives and negatives.
 
-    For example, if single-word data is size N, and twoword_frequency=0.5, we try to add 
-    another N total two-word examples (half pos, half neg), so that half of the final 
+    For example, if single-word data is size N, and twoword_frequency=0.5, we try to add
+    another N total two-word examples (half pos, half neg), so that half of the final
     training set is from two-word data.
     """
     word_to_probe = dict()
@@ -675,7 +672,7 @@ def words_data_to_probes(
             desired_neg_size = desired_pos_size
             logger.print(f"Desired two_word pos_size: {desired_pos_size} and neg_size: {desired_neg_size}")
 
-            # If we don't have enough pos_twoword_entries or neg_twoword_entries, 
+            # If we don't have enough pos_twoword_entries or neg_twoword_entries,
             # reduce the desired counts
             desired_pos_size = min(desired_pos_size, len(pos_twoword_entries))
             desired_neg_size = min(desired_neg_size, len(neg_twoword_entries))
@@ -735,7 +732,7 @@ def plot_layer_norms(
 
     # Create the plot
     plt.figure(figsize=(12, 6))
-    
+
     plt.plot(norm_dontthink_reg.index, norm_dontthink_reg.values, 'b-', linewidth=2,
              label='Clued - regular')
     plt.plot(norm_reg.index, norm_reg.values, 'r-', linewidth=2,
