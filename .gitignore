@@ -28,6 +28,8 @@ experiments/self_obfuscation_v1_rated/outputs/
 !experiments/self_obfuscation_pipeline/outputs/**/*.csv
 !experiments/self_obfuscation_pipeline/outputs/**/*likelihoods*.json
 !experiments/self_obfuscation_pipeline/outputs/**/cosine_similarity_raw_data_checkpoint_gemma_2_9b_final_layer.pkl
+!experiments/self_obfuscation_pipeline/outputs/**/cosine_similarity_raw_data_checkpoint_gemma_ref_deception.pkl
+!experiments/self_obfuscation_pipeline/outputs/**/cosine_similarity_raw_data_checkpoint_gemma_ref_harmful.pkl
 !experiments/self_obfuscation_capability_evals/results/**/*.json
 # Paper figures (for traceability from paper to codebase)
 !paper_figures/**

@@ -23,20 +23,12 @@ import concurrent.futures
 import threading
 from dataclasses import dataclass
 
-# Import Gemma model functions from generate_synthetic_data.py
-# NOTE: These functions were in data/self_obfuscation_v1_synthetic/ which was removed during cleanup.
-# This script is only needed for regenerating rated datasets from scratch (the rated outputs are already included).
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-try:
-    from self_obfuscation_v1_synthetic.generate_synthetic_data import load_transformers_model, optimized_generate_from_string, remove_gemini_special_chars
-except ImportError:
-    raise ImportError(
-        "data/self_obfuscation_v1_synthetic/ was removed during repo cleanup. "
-        "This script is only needed for regenerating rated datasets from scratch. "
-        "The pre-rated datasets are already included in data/self_obfuscation_v1_synthetic_rating/outputs/."
-    )
+# Model loading/generation helpers shared with the synthetic data generator
+from data.self_obfuscation_v1_synthetic.generate_synthetic_data import (
+    load_transformers_model,
+    optimized_generate_from_string,
+    remove_model_special_chars,
+)
 
 
 @dataclass
@@ -513,7 +505,7 @@ Respond with ONLY a JSON object in this exact format:
         """
         try:
             # Clean up response
-            response = remove_gemini_special_chars(response).strip()
+            response = remove_model_special_chars(response, self.gemma_model_name).strip()
             
             # Try to find JSON in the response
             start_idx = response.find('{')
@@ -1415,7 +1407,7 @@ def main():
     load_dotenv(override=True)
     
     parser = argparse.ArgumentParser(description="Evaluate adjective fit for synthetic data using OpenAI Batch API or local Gemma")
-    parser.add_argument("--data_dir", default="data/self_obfuscation_v1_synthetic/outputs/20250730_215204_harmful_orgtest_ablit", help="Directory containing JSON files to evaluate")
+    parser.add_argument("--data_dir", required=True, help="Directory of generate_synthetic_data.py output JSONs to evaluate (e.g. data/self_obfuscation_v1_synthetic/outputs/<timestamp>)")
     parser.add_argument("--output_dir", help="Output directory (default: data/self_obfuscation_v1_synthetic_rating/outputs)")
     parser.add_argument("--model", default="gpt-4.1-nano", help="OpenAI model to use (default: gpt-4.1-nano, ignored if --use-gemma is set)")
     parser.add_argument("--subset", default=-1, type=int, dest="subset_size", help="Process only this many entries per file")
