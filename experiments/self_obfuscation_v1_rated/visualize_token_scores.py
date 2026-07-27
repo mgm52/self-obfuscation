@@ -115,13 +115,6 @@ def move_probe_to_device(probe, device: torch.device):
             except Exception:
                 # Could be a sklearn probe inside dict, ignore
                 pass
-    # Mahalanobis / VAE store tensors in attributes:
-    for attr in ("means", "inv_covs"):
-        if hasattr(probe, attr):
-            try:
-                setattr(probe, attr, getattr(probe, attr).to(device))
-            except Exception:
-                pass
     # Set device attribute if present
     try:
         probe.device = device

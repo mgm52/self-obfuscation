@@ -21,6 +21,11 @@ import torch
 import gc
 import psutil
 
+from dotenv import load_dotenv
+
+# Load .env so MODEL_DIR / HF_TOKEN etc. are available to any script using these utils
+load_dotenv()
+
 def cut_to_first_sentence(text, minimum_cut_length=-1):
     """Cut a text to the first sentence. Which may end in ., !, ?, or newline."""
     for i, char in enumerate(text):
