@@ -1,22 +1,20 @@
 # Project
-external/
-wandb/
-scripts/
-slurm/
-build/
-archive/
+/external/
+/wandb/
+/scripts/
+/slurm/
+/archive/
+/models/
 
-# Venv
-.venv/
-.DS_Store/
+# Editor / OS
 .vscode/
+.DS_Store
 
+# Run logs written by CSVTXTLogger
 full_log*
 general_log*
 harmful_probe_test_results*
-
-# Hydra
-multirun/
+temp_*config*.yaml
 
 # Experiment outputs (regeneratable)
 experiments/self_obfuscation_pipeline/outputs/final_plots/
@@ -31,8 +29,6 @@ experiments/self_obfuscation_v1_rated/outputs/
 !experiments/self_obfuscation_pipeline/outputs/**/cosine_similarity_raw_data_checkpoint_gemma_ref_deception.pkl
 !experiments/self_obfuscation_pipeline/outputs/**/cosine_similarity_raw_data_checkpoint_gemma_ref_harmful.pkl
 !experiments/self_obfuscation_capability_evals/results/**/*.json
-# Paper figures (for traceability from paper to codebase)
-!paper_figures/**
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -44,13 +40,13 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
+/build/
 develop-eggs/
 dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/

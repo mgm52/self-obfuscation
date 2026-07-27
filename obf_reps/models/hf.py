@@ -742,12 +742,12 @@ class HFHardPromptedWithSelectableLayers(HFHardPrompted):
                 layers = self._get_model_layers()
                 hook = layers[idx].register_forward_hook(make_hook(idx))
                 hooks.append(hook)
-        
+
         attention_mask = input_attn_mask
         input_seq_len = input_embeds.shape[1]
         target_seq_len = 0
 
-        # 
+        #
         # 2. Concat target embeds (if any) to the input
         #
         if (
@@ -763,11 +763,11 @@ class HFHardPromptedWithSelectableLayers(HFHardPrompted):
                 b_size, input_seq_len, dtype=torch.bool, device=self.device
             ) * -100
             target_loss_mask = target_ids.clone()
-            
+
             # Create target_attn_mask if it's None
             if target_attn_mask is None:
                 target_attn_mask = torch.ones_like(target_ids, dtype=torch.bool, device=self.device)
-            
+
             target_loss_mask[target_attn_mask == 0] = -100
             hf_labels = torch.cat([input_loss_mask, target_loss_mask], dim=1)
 
@@ -805,7 +805,7 @@ class HFHardPromptedWithSelectableLayers(HFHardPrompted):
             layer_indices = sorted(collected_hidden.keys())
             input_rep_list = []
             target_rep_list = []
-            
+
             for L in layer_indices:
                 all_tokens = collected_hidden[L]
                 inp = all_tokens[:, :input_seq_len, :]
@@ -828,7 +828,7 @@ class HFHardPromptedWithSelectableLayers(HFHardPrompted):
 
             output = ForwardReturn(
                 target_ids=target_ids,
-                target_logits=prediction_logits, 
+                target_logits=prediction_logits,
                 target_reps=target_reps,
                 input_logits=input_logits,
                 input_reps=input_reps,
@@ -871,7 +871,7 @@ class HFHardPromptedWithSelectableLayers(HFHardPrompted):
                 loss=None,
                 input_ids=input_ids,
             )
-        
+
         ###
         # 5. Remove hooks after forward pass
         ###

@@ -4,22 +4,25 @@ setup(
     name="neural-chameleons",
     version="1.0.0",
     description="Neural Chameleons: Language Models Can Learn to Hide Their Thoughts from Activation Monitors",
-    packages=find_namespace_packages(),
+    packages=find_namespace_packages(
+        include=["obf_reps*", "experiments*", "data*"],
+        exclude=["*.outputs*", "*.results*", "*.output"],
+    ),
     author="Max McGuinness, Alex Serrano, Luke Bailey, Scott Emmons",
     author_email="max@max.rip, mail@alexserrano.org",
     url="https://github.com/mgm52/neural-chameleons",
+    license="MIT",
     python_requires=">=3.10",
     install_requires=[
-        # Base
+        # Base (torch is intentionally not pinned here -- install it separately
+        # with the right CUDA build for your system, see README)
         "transformers",
         "datasets",
         "accelerate",
         "scikit-learn",
-        "hydra-core",
-        "sae-lens",
+        "joblib",
         "numpy",
         "scipy",
-        "einops",
         "pyyaml",
         "pydantic",
         # Visualization
@@ -36,12 +39,12 @@ setup(
         "sentencepiece",
         "bitsandbytes",
         "sentence-transformers",
-        # Git dependencies
-        "repe @ git+https://github.com/andyzoujm/representation-engineering.git@main",
-        "eai-sparsify @ git+https://github.com/EleutherAI/sparsify@main",
-        "strong_reject @ git+https://github.com/dsbowen/strong_reject.git@main",
     ],
     extras_require={
         "dev": ["pytest", "pre-commit", "ipykernel", "ipywidgets"],
+        # Only needed to regenerate the rated training datasets from scratch
+        "data-regen": ["openai"],
+        # Only needed for the lm-eval capability benchmarks
+        "evals": ["lm-eval"],
     },
 )
