@@ -42,7 +42,7 @@ def split_data(data_list: list, test_size: int, seed: int) -> Tuple[list, list]:
 
 def load_ultrachat_sample(num_conversations: int = 100, split: str = "test_gen"):
     """Load a sample from UltraChat dataset."""
-    dataset = load_dataset("HuggingFaceH4/ultrachat_200k", split=split, trust_remote_code=True)
+    dataset = load_dataset("HuggingFaceH4/ultrachat_200k", split=split)
     sampled_dataset = dataset.select(range(min(num_conversations, len(dataset))))
     return sampled_dataset
 

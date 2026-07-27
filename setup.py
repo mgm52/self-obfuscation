@@ -12,6 +12,8 @@ setup(
     author_email="max@max.rip, mail@alexserrano.org",
     url="https://github.com/mgm52/neural-chameleons",
     license="MIT",
+    package_data={"data.repe_deception": ["*.csv"]},
+    include_package_data=True,
     python_requires=">=3.10",
     install_requires=[
         # Base (torch is intentionally not pinned here -- install it separately

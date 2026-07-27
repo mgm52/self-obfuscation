@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Tuple
 import pandas as pd
 
 from datasets import load_dataset
-from data.apollo_repe_deception.repe import RepeHonestDishonestFacts, Label
+from data.repe_deception.repe import RepeHonestDishonestFacts, Label
 
 
 class DatasetAdapter:
@@ -157,7 +157,7 @@ class DolusDatasetAdapter(DatasetAdapter):
 class WildJailbreakAdapter(DatasetAdapter):
     """Adapter for the Wild Jailbreak dataset from local CSV file.
 
-    NOTE: The CSV this adapter points at (datasets/harmfulness/wildjailbreak_train.csv)
+    NOTE: The CSV this adapter points at (data/harmfulness/wildjailbreak_train.csv)
     is not distributed with this repository because WildJailbreak is a gated dataset.
     To use this adapter, download allenai/wildjailbreak from HuggingFace and place the
     train CSV at that path.

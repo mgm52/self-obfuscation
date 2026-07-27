@@ -302,7 +302,7 @@ def run_script(script_path, **kwargs):
             f"Error: {exc.stderr}\n"
         )
 
-        log_file = f"experiments/self_obfuscation_pipeline/error_logs/error_{timestamp}.log"
+        log_file = f"experiments/pipeline/error_logs/error_{timestamp}.log"
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
         with open(log_file, "w") as f:
             f.write(f"Error occurred at {timestamp}\n")

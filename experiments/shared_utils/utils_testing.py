@@ -396,7 +396,7 @@ def test_probe_on_prompts_responses(model: HFHardPrompted, metric: ObfMetric, lo
                 "formatter_name": "Unknown",
                 "two_word": False
             }],
-            f"experiments/self_obfuscation_pipeline/outputs/results/{dataset_name}_probe_scores"
+            f"outputs/probe_scores/{dataset_name}_probe_scores"
         )
     logger.print(f"Finished testing {probed_word} probe on model on {dataset_name} data.")
 
@@ -464,7 +464,7 @@ def test_probe_on_most_regular_pregen_data(model: HFHardPrompted, metric: ObfMet
                 "two_word": entry["two_word"],
                 "formatter_name": entry.get("formatter_name", "Unknown")
             }],
-            f"experiments/self_obfuscation_pipeline/outputs/results/all_regular_pregen_probe_scores"
+            f"outputs/probe_scores/all_regular_pregen_probe_scores"
         )
     logger.print(f"Finished testing {probed_word} probe on model on pregen data.")
 
@@ -974,5 +974,5 @@ def test_probe_on_model(model: HFHardPrompted, metric: ObfMetric, logger, probed
                 "model_details": model_details,
                 "formatter_name": entry.get("formatter_name", "Unknown")
             }],
-            f"experiments/self_obfuscation_pipeline/outputs/results/probe_scores_{custom_folder_name}"
+            f"outputs/probe_scores/probe_scores_{custom_folder_name}"
         ) 

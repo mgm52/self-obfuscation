@@ -2,7 +2,7 @@ default_language_version:
   python: python3
 
 # CSVs are data; the outputs JSONs are committed experiment results (some >20 MB)
-exclude: '^.*\.csv$|^data/self_obfuscation_v1_synthetic_rating/outputs/|^experiments/.*/outputs/|^experiments/.*/results/'
+exclude: '^.*\.csv$|^data/synthetic_rating/outputs/|^results/'
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks

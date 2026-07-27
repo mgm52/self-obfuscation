@@ -16,6 +16,7 @@ import torch
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
 import pickle
+import re
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -369,7 +370,11 @@ def save_raw_data(condition_data, similarities, reference_condition, embedding_m
     }
 
     # Create filename based on embedding method
-    safe_method_name = embedding_method.replace(' ', '_').replace('-', '_').lower()
+    # Must match the sanitisation in generate_plot_filename() and the committed
+    # result filenames: ':' and parentheses are not portable in filenames.
+    safe_method_name = (embedding_method.replace(' ', '_').replace('-', '_')
+                        .replace('(', '').replace(')', '').replace(':', '').lower())
+    safe_method_name = re.sub(r'_+', '_', safe_method_name).strip('_')
     filename = f"cosine_similarity_raw_data_{safe_method_name}.pkl"
 
     if target_dir:
